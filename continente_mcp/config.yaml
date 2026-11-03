@@ -1,0 +1,31 @@
+name: Continente MCP
+version: "1.0.0"
+slug: continente_mcp
+description: Continente (continentept-mcp) as an MCP server over HTTP for any AI agent, with per-agent tokens, sign-in through noVNC and checkout blocked by default.
+url: https://github.com/jpch/continente-mcp-ha
+image: ghcr.io/jpch/{arch}-continente-mcp
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8100
+panel_icon: mdi:cart-outline
+panel_title: Continente MCP
+# The page manages tokens, credentials and sign-in: Home Assistant administrators only.
+panel_admin: true
+ports:
+  8100/tcp: 8100
+ports_description:
+  8100/tcp: MCP endpoint for agents on the home network (/mcp, token required)
+# /share/continente-mcp: endpoint file, token requests from other add-ons, one-time session hand-off.
+map:
+  - share:rw
+options:
+  allow_checkout: false
+  log_level: info
+schema:
+  allow_checkout: bool
+  log_level: list(debug|info|warning|error)
