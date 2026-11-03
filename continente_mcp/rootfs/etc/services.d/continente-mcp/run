@@ -1,0 +1,4 @@
+#!/usr/bin/with-contenv bash
+# Starts the MCP gateway and the add-on page (port 8100). Options are read from /data/options.json.
+cd /opt/server || exit 1
+exec node dist/index.js

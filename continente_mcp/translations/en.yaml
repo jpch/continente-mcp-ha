@@ -1,0 +1,8 @@
+configuration:
+  allow_checkout:
+    name: Allow checkout and payment tools
+    description: "Off (default): any tool that looks like checkout, payment, placing an order, delivery slots, vouchers or cards is hidden and refused for every token. On: such tools, if continentept-mcp ever offers one and it passed the contract review, become available to every token. continentept-mcp 0.12.1 has none."
+  log_level:
+    name: Log level
+network:
+  8100/tcp: MCP endpoint for agents on the home network (/mcp, token required)
