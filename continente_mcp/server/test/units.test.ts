@@ -95,6 +95,22 @@ describe('session hand-off', () => {
     expect(readFileSync(join(target, 'credentials.env'), 'utf8')).toBe('own');
     expect(existsSync(imp)).toBe(false);
   });
+  it('imports over a browser profile the upstream created on its first start', () => {
+    const d = tmp(); const share = new ShareDir(join(d, 'share')); const target = join(d, 'continente');
+    mkdirSync(join(target, 'profile'), { recursive: true }); writeFileSync(join(target, 'profile', 'cookies'), 'fresh');
+    const imp = handoff(share.dir); writeFileSync(join(imp, 'READY'), '');
+    expect(share.importSession(target)).toBe('imported');
+    expect(readFileSync(join(target, 'profile', 'cookies'), 'utf8')).toBe('c');
+    expect(existsSync(join(target, 'credentials.env'))).toBe(true);
+  });
+  it('never replaces a session that was valid before', () => {
+    const d = tmp(); const share = new ShareDir(join(d, 'share')); const target = join(d, 'continente');
+    mkdirSync(join(target, 'profile'), { recursive: true }); writeFileSync(join(target, 'profile', 'cookies'), 'own');
+    const imp = handoff(share.dir); writeFileSync(join(imp, 'READY'), '');
+    expect(share.importSession(target, true)).toBe('skipped');
+    expect(readFileSync(join(target, 'profile', 'cookies'), 'utf8')).toBe('own');
+    expect(existsSync(imp)).toBe(false);
+  });
   it('writes an endpoint file without secrets and ignores malformed requests', () => {
     const d = tmp(); const share = new ShareDir(join(d, 'share'));
     share.writeEndpoint({ slug: 'x_continente_mcp', hostname: 'x-continente-mcp', port: 8100, version: '1.0.0' });

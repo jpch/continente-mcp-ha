@@ -22,3 +22,7 @@ Verdict: **no Critical or High findings; release allowed.** Medium findings are 
 | 12 | Supply chain | `continentept-mcp` is installed from npm at a pinned version; updates come only through the daily workflow, which waits 72 h after an upstream release, inspects `tools/list` with `--ignore-scripts` and no browser, and auto-merges only when the tool contract is unchanged. Actions are pinned by SHA; `npm audit` reports 0 vulnerabilities. | Low | Accepted |
 | 13 | Repository setting | The update workflow needs "Allow GitHub Actions to create and approve pull requests"; only `upstream-bump.yaml` requests `pull-requests: write`. | Low | Accepted |
 | 14 | Repository content | No secrets, personal data, IP addresses or host names are committed (checked with a grep for addresses, e-mail addresses and tokens before release). | None | OK |
+
+## 1.0.2 addendum
+
+- Finding #8 (session hand-off through `/share`) re-checked after the import fix: the import window is unchanged in practice. It is open only while the add-on has no saved account and has never had a valid session. After the first valid session (marker `/data/session-established`) or once an account is saved, no hand-off is accepted. Severity stays Medium (accepted).

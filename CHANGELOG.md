@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-03
+### Fixed
+- A session handed off by Cesto was ignored when the upstream had already created an empty browser profile on first start. The add-on now counts only a saved account or a session that was once valid as its own.
+- `/health` reported version 1.0.0.
+
 ## [1.0.1] - 2026-11-03
 ### Changed
 - Home Assistant now builds the add-on locally instead of pulling a prebuilt image. Prebuilt images are only pushed to GHCR when the repository variable `PUBLISH_IMAGES` is `true` (see README).
