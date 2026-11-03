@@ -101,3 +101,7 @@ npm install -g --ignore-scripts continentept-mcp@0.12.1 && npm run contract:chec
 ```
 
 Licence: MIT.
+
+## Prebuilt images
+
+The add-on is built locally by Home Assistant (the first install takes a few minutes). To publish prebuilt images to GHCR instead, make sure the `ghcr.io/jpch/{arch}-continente-mcp` packages grant this repository write access (package settings, "Manage Actions access"), set the repository variable `PUBLISH_IMAGES=true`, and add `image: ghcr.io/jpch/{arch}-continente-mcp` back to `continente_mcp/config.yaml`.

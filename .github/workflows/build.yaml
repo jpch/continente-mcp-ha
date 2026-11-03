@@ -109,7 +109,7 @@ jobs:
           docker exec -w /opt/smoke smoke node smoke.mjs
           echo "memory.peak bytes:"; docker exec smoke cat /sys/fs/cgroup/memory.peak
       - name: Publish to ghcr.io (main and tags, or when called with publish)
-        if: github.event_name == 'push' || inputs.publish
+        if: vars.PUBLISH_IMAGES == 'true' && (github.event_name == 'push' || inputs.publish)
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker push ghcr.io/jpch/${{ matrix.arch }}-continente-mcp:${{ steps.meta.outputs.version }}
