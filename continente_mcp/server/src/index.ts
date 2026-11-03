@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
@@ -55,14 +55,19 @@ const checkSession = (): Promise<boolean | null> => {
 };
 login.on('success', () => { restartUpstream(); lastCheck = 0; void checkSession(); });
 login.on('failed', () => log('[login] sign-in did not complete'));
-session.on('session', (v: boolean | null) => log(`[session] valid=${v}`));
+// Marks that this add-on has had a working session of its own, so a later hand-off never replaces it.
+const sessionMarker = join(config.dataDir, 'session-established');
+session.on('session', (v: boolean | null) => {
+  log(`[session] valid=${v}`);
+  if (v === true && !existsSync(sessionMarker)) writeFileSync(sessionMarker, '', { mode: 0o600 });
+});
 
 // One-time hand-off of an existing session (Cesto before 2.0.0) and the endpoint file for other add-ons.
 const pollShare = () => {
   if (!share) return;
   try {
     share.writeEndpoint({ slug: config.addonSlug, hostname: config.hostname, port: config.port, version });
-    const r = share.importSession(continenteDir);
+    const r = share.importSession(continenteDir, existsSync(sessionMarker));
     if (r !== 'none') {
       log(r === 'imported' ? '[migration] imported a Continente session and credentials handed off by another add-on' : '[migration] ignored a handed-off session: this add-on already has one');
       if (r === 'imported') { restartUpstream(); lastCheck = 0; void checkSession(); }

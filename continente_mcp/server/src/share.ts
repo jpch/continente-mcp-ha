@@ -60,14 +60,16 @@ export class ShareDir {
   }
 
   /**
-   * Moves a handed-off session into `target` when `target` holds none. Only regular files and folders
-   * are copied (symbolic links are skipped). The hand-off folder is always deleted.
+   * Moves a handed-off session into `target` when this add-on has none of its own: no saved account
+   * (`credentials.env`) and no session that was ever valid (`hadSession`). A browser profile that the
+   * upstream created on its first start does not count. Only regular files and folders are copied
+   * (symbolic links are skipped). The hand-off folder is always deleted.
    */
-  importSession(target: string): 'none' | 'imported' | 'skipped' {
+  importSession(target: string, hadSession = false): 'none' | 'imported' | 'skipped' {
     const src = join(this.dir, 'import');
     if (!existsSync(src) || !existsSync(join(src, 'READY'))) return 'none';
     try {
-      const hasOwn = existsSync(target) && readdirSync(target).some(f => !f.startsWith('.'));
+      const hasOwn = hadSession || existsSync(join(target, 'credentials.env'));
       if (hasOwn) return 'skipped';
       mkdirSync(target, { recursive: true, mode: 0o700 });
       cpSync(src, target, {
