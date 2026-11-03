@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-03
+### Changed
+- Home Assistant now builds the add-on locally instead of pulling a prebuilt image. Prebuilt images are only pushed to GHCR when the repository variable `PUBLISH_IMAGES` is `true` (see README).
+
 ## [1.0.0] - 2026-11-03
 ### Added
 - First release. Runs `continentept-mcp` 0.12.1 (unchanged, from npm) behind an MCP server over streamable HTTP on port 8100 (`/mcp`) and through Home Assistant ingress.
