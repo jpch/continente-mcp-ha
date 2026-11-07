@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-07
+### Changed
+- Installed `continentept-mcp` updated from 0.12.1 to 0.13.0 (automated update; the tool contract changed and was reviewed before merging).
+
 ## [1.0.2] - 2026-11-03
 ### Fixed
 - A session handed off by Cesto was ignored when the upstream had already created an empty browser profile on first start. The add-on now counts only a saved account or a session that was once valid as its own.
