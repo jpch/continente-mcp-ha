@@ -4,6 +4,19 @@ All notable changes to this repository are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+## [1.0.3] - 2026-11-11
+### Changed
+- `continentept-mcp` updated from 0.12.1 to 0.13.0 (reviewed). The only change to the 15 existing tools is in the
+  error envelope: `mutation.recovery.action` can now be `list_coupons` as well as `get_cart`. The reviewed snapshot
+  (`server/contract/upstream-tools.json`) now holds 17 tools.
+- 0.13.0 also makes the browser refuse payment, order submission and delivery-slot reservation itself (upstream
+  security change).
+- Dependencies: fastify 5.12.8, @types/node 22.20.5, vitest 5.1.0; CI uses actions/setup-node 7.1.0 (pinned by SHA).
+### Security
+- The new `list_coupons` and `set_cart_coupons` tools are never listed or called, for any token, and `allow_checkout`
+  does not unlock them (`NEVER_EXPOSED_TOOL` in `server/src/policy.ts`; the contract report marks such tools). A
+  refused call is logged with the agent name.
 ### Added
 - European Portuguese translation of the add-on options (`translations/pt.yaml`).
 - Dependabot for npm (`continente_mcp/server`, the smoke test) and GitHub Actions. `continentept-mcp` stays with

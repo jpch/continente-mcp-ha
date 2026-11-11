@@ -48,6 +48,9 @@ export function diff(expected, actual) {
   return { added, removed, changed };
 }
 
+/** Same pattern as NEVER_EXPOSED_TOOL in src/policy.ts (a test keeps them equal). */
+export const NEVER = /coupon|voucher/i;
+
 /** Same pattern as CHECKOUT_TOOL in src/policy.ts (a contract test keeps them equal). */
 export const FORBIDDEN = /checkout|pay|order_(create|place|submit|confirm)|(place|submit|confirm|create|finali[sz]e)_?order|purchase|buy|slot|deliver|voucher|coupon|billing|card/i;
 
@@ -58,7 +61,7 @@ export function report(d, version) {
   const v = /^[\w.+-]{1,40}$/.test(String(version ?? '')) ? version : '';
   const lines = [`### continentept-mcp ${v} tool contract`.replace('  ', ' '), ''];
   if (!d.added.length && !d.removed.length && !d.changed.length) return [...lines, 'No tool was added or removed and every input and output schema matches the snapshot.'].join('\n');
-  if (d.added.length) lines.push('**New upstream tools (not exposed until reviewed):**', ...d.added.map(n => `- ${safe(n)}${FORBIDDEN.test(n) ? ' **(checkout/payment-like name: blocked unless `allow_checkout` is on)**' : ''}`), '');
+  if (d.added.length) lines.push('**New upstream tools (not exposed until reviewed):**', ...d.added.map(n => `- ${safe(n)}${NEVER.test(n) ? ' **(coupon/voucher: never exposed, not even with `allow_checkout`)**' : FORBIDDEN.test(n) ? ' **(checkout/payment-like name: blocked unless `allow_checkout` is on)**' : ''}`), '');
   if (d.removed.length) lines.push('**Removed upstream tools:**', ...d.removed.map(n => `- ${safe(n)}`), '');
   if (d.changed.length) lines.push('**Changed schemas:**', ...d.changed.map(c => `- ${safe(c.name)}: ${c.parts.join(', ')}`), '');
   lines.push('Auto-merge is blocked: review the changes and the policy, then refresh the snapshot with `npm run contract:write`.');

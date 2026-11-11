@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { isCartChange, isCheckoutTool, type ToolPolicy } from './policy.js';
+import { isCartChange, isCheckoutTool, isNeverExposed, type ToolPolicy } from './policy.js';
 import { QueueFullError, type SerialQueue } from './queue.js';
 import { resultOf, type SessionTracker, type Upstream } from './upstream.js';
 import type { PublicToken } from './tokens.js';
@@ -57,7 +57,8 @@ export class Gateway {
   async call(agent: PublicToken, name: string, args: Record<string, unknown>): Promise<CallToolResult> {
     const who = `agent="${agent.name}"`;
     if (!this.o.policy.allows(name)) {
-      if (isCheckoutTool(String(name))) this.o.auditLog(`[policy] ${who} refused tool=${safeId(name)} (allow_checkout is off)`);
+      if (isNeverExposed(String(name))) this.o.auditLog(`[policy] ${who} refused tool=${safeId(name)} (coupon/voucher tools are never exposed)`);
+      else if (isCheckoutTool(String(name))) this.o.auditLog(`[policy] ${who} refused tool=${safeId(name)} (allow_checkout is off)`);
       return errorResult('tool_not_available', `Tool ${String(name).slice(0, 80)} is not available`);
     }
     if (!this.limiter.take(agent.id)) return errorResult('rate_limited', 'Too many calls; wait a minute');

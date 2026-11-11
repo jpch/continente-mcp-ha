@@ -1,7 +1,7 @@
 configuration:
   allow_checkout:
     name: Permitir ferramentas de finalizar compra e pagamento
-    description: "Desligado (predefinição): qualquer ferramenta que pareça finalizar compra, pagamento, fazer uma encomenda, horários de entrega, vales, cupões ou cartões fica escondida e é recusada para todos os tokens. Ligado: essas ferramentas, se o continentept-mcp alguma vez oferecer uma e ela passar a revisão do contrato, ficam disponíveis para todos os tokens. O continentept-mcp 0.12.1 não tem nenhuma."
+    description: "Desligado (predefinição): qualquer ferramenta que pareça finalizar compra, pagamento, fazer uma encomenda, horários de entrega, faturação ou cartões fica escondida e é recusada para todos os tokens. Ligado: essas ferramentas, se o continentept-mcp alguma vez oferecer uma e ela passar a revisão do contrato, ficam disponíveis para todos os tokens. O continentept-mcp 0.13.0 não tem nenhuma. As ferramentas de cupões e vales nunca ficam disponíveis, nem com esta opção ligada."
   log_level:
     name: Nível de registo
 network:

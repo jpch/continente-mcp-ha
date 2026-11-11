@@ -3,18 +3,32 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CHECKOUT_TOOL, ToolPolicy } from '../src/policy.js';
+import { CHECKOUT_TOOL, NEVER_EXPOSED_TOOL, ToolPolicy } from '../src/policy.js';
 import { QueueFullError, SerialQueue } from '../src/queue.js';
 import { ShareDir } from '../src/share.js';
 import { TokenStore } from '../src/tokens.js';
-import { FORBIDDEN } from '../scripts/upstream-tools.mjs';
+import { FORBIDDEN, NEVER, diff, report } from '../scripts/upstream-tools.mjs';
 import { REVIEWED } from './helpers.js';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'cmcp-unit-'));
 
 describe('tool policy', () => {
   it('uses the same checkout pattern as the contract check', () => { expect(CHECKOUT_TOOL.source).toBe(FORBIDDEN.source); expect(CHECKOUT_TOOL.flags).toBe(FORBIDDEN.flags); });
-  it('the reviewed continentept-mcp tools contain no checkout-like tool', () => { expect(REVIEWED.filter(n => CHECKOUT_TOOL.test(n))).toEqual([]); expect(REVIEWED).toContain('add_cart_item'); });
+  it('uses the same never-exposed pattern as the contract check', () => { expect(NEVER_EXPOSED_TOOL.source).toBe(NEVER.source); expect(NEVER_EXPOSED_TOOL.flags).toBe(NEVER.flags); });
+  it('the only checkout-like reviewed tools are the never-exposed coupon tools', () => {
+    expect(REVIEWED.filter(n => CHECKOUT_TOOL.test(n)).sort()).toEqual(['list_coupons', 'set_cart_coupons']);
+    expect(REVIEWED).toContain('add_cart_item');
+  });
+  it('coupon and voucher tools are never allowed, not even with allow_checkout on', () => {
+    const p = new ToolPolicy([...REVIEWED, 'apply_voucher'], () => true);
+    for (const n of ['list_coupons', 'set_cart_coupons', 'apply_voucher', 'LIST_COUPONS']) expect(p.allows(n), n).toBe(false);
+    expect(p.allows('get_cart')).toBe(true);
+  });
+  it('the contract report marks new coupon tools as never exposed', () => {
+    const r = report(diff([], [{ name: 'list_coupons', inputSchema: {}, outputSchema: {} }, { name: 'checkout_now', inputSchema: {}, outputSchema: {} }]), '9.9.9');
+    expect(r).toContain('`list_coupons` **(coupon/voucher: never exposed');
+    expect(r).toContain('`checkout_now` **(checkout/payment-like name: blocked unless');
+  });
   it('allows reviewed tools, blocks checkout-like ones by default', () => {
     let allow = false;
     const p = new ToolPolicy([...REVIEWED, 'checkout'], () => allow);

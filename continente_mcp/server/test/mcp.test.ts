@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { setup, REVIEWED } from './helpers.js';
+import { isNeverExposed } from '../src/policy.js';
+
+/** The reviewed tools an agent can see: everything but the coupon/voucher tools. */
+const EXPOSED = REVIEWED.filter(n => !isNeverExposed(n));
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const c of cleanups.splice(0)) await c(); });
@@ -37,7 +41,8 @@ describe('MCP over streamable HTTP', () => {
     const { token } = s.tokens.create('Claude desktop');
     const client = await s.connect({ authorization: `Bearer ${token}` });
     const tools = (await client.listTools()).tools.map(t => t.name).sort();
-    expect(tools).toEqual([...REVIEWED].sort());
+    expect(tools).toEqual([...EXPOSED].sort());
+    expect(EXPOSED).toHaveLength(15);
     const search = await client.callTool({ name: 'search_products', arguments: { query: 'leite' } });
     expect(search.isError).toBeFalsy();
     const add = await client.callTool({ name: 'add_cart_item', arguments: { productId: '4421406', quantity: 2 } });
@@ -53,7 +58,7 @@ describe('MCP over streamable HTTP', () => {
     const s = await start();
     const { token } = s.tokens.create('remote agent');
     const client = await s.connect({ 'x-continente-mcp-token': token });
-    expect((await client.listTools()).tools.length).toBe(REVIEWED.length);
+    expect((await client.listTools()).tools.length).toBe(EXPOSED.length);
   });
 
   it('hides and refuses checkout-like tools unless allow_checkout is on', async () => {
@@ -75,6 +80,18 @@ describe('MCP over streamable HTTP', () => {
     expect((await c2.listTools()).tools.map(t => t.name)).toContain('checkout_cart');
     expect((await c2.callTool({ name: 'checkout_cart', arguments: {} })).isError).toBeFalsy();
     expect(on.log.some(l => l.startsWith('[cart] agent="agent" tool=checkout_cart'))).toBe(true);
+  });
+
+  it('never lists or calls the coupon tools of continentept-mcp 0.13.0, even with allow_checkout', async () => {
+    const s = await start({ allowCheckout: true }, { FAKE_EXTRA_TOOLS: 'list_coupons,set_cart_coupons' });
+    const { token } = s.tokens.create('agent');
+    const c = await s.connect({ authorization: `Bearer ${token}` });
+    const names = (await c.listTools()).tools.map(t => t.name);
+    expect(names).not.toContain('list_coupons');
+    expect(names).not.toContain('set_cart_coupons');
+    for (const name of ['list_coupons', 'set_cart_coupons']) expect((await c.callTool({ name, arguments: name === 'set_cart_coupons' ? { couponIds: ['x'] } : {} })).isError).toBe(true);
+    expect(calls(s.calls)).toEqual([]);
+    expect(s.log.some(l => l.includes('refused tool=set_cart_coupons (coupon/voucher tools are never exposed)'))).toBe(true);
   });
 
   it('never exposes a tool outside the reviewed contract, even with allow_checkout', async () => {

@@ -15,7 +15,8 @@ Independent project, not affiliated with Continente or with the author of `conti
 - Use the catalogue tools (search, products, labels, favourites, orders read-only) and **read and change the cart**
   (`add_cart_item`, `set_cart_item_quantity`, `remove_cart_item`, `clear_cart`).
 - **Never check out or pay by default.** Tools whose names look like checkout, payment, placing an order, delivery
-  slots, vouchers, coupons, billing or cards are hidden from `tools/list` and refused.
+  slots, vouchers, coupons, billing or cards are hidden from `tools/list` and refused. Coupon and voucher tools
+  (`list_coupons`, `set_cart_coupons`) are never exposed, not even with `allow_checkout`.
 - Only tools in the reviewed contract snapshot (`continente_mcp/server/contract/upstream-tools.json`) are ever
   listed or called.
 - Every cart change is logged with the agent name, e.g.
