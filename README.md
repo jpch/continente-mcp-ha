@@ -68,7 +68,9 @@ The add-on maps `/share` and uses `/share/continente-mcp`:
   SHA-256 hash and a name; the request appears on the add-on page with a fingerprint, and nothing happens until
   an administrator approves it. The token never leaves the requesting add-on.
 - `import/`: a one-time hand-off of an existing Continente session and credentials (Cesto before 2.0.0). It is
-  imported only when this add-on has no session yet, and deleted immediately either way.
+  imported only when this add-on has no saved account and no session that was ever valid (1.0.2), and deleted
+  immediately either way. Cesto 2.0.2 and later delete their own old copy once this add-on reports an account or a
+  valid session in `/health`.
 
 ## Updates of continentept-mcp
 
@@ -101,6 +103,14 @@ npm install -g --ignore-scripts continentept-mcp@0.12.1 && npm run contract:chec
 ```
 
 Licence: MIT.
+
+The add-on options are translated in `continente_mcp/translations/` (`en.yaml`, `pt.yaml`). Dependabot proposes
+weekly npm (`continente_mcp/server`, the smoke test) and GitHub Actions updates; `continentept-mcp` itself is only
+updated by `upstream-bump.yaml`.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for every release; each GitHub release carries the notes of its version.
 
 ## Prebuilt images
 

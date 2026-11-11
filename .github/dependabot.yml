@@ -1,0 +1,15 @@
+# Weekly dependency updates. continentept-mcp itself is not here on purpose: it is pinned by the Dockerfile ARG
+# and updated by upstream-bump.yaml, which gates every update on the tool contract.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/continente_mcp/server"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: "/continente_mcp/rootfs/opt/smoke"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 2
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule: { interval: weekly }

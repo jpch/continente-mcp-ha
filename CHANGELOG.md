@@ -4,6 +4,11 @@ All notable changes to this repository are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+### Added
+- European Portuguese translation of the add-on options (`translations/pt.yaml`).
+- Dependabot for npm (`continente_mcp/server`, the smoke test) and GitHub Actions. `continentept-mcp` stays with
+  `upstream-bump.yaml`.
+- A Changelog section in the README.
 
 ## [1.0.2] - 2026-11-03
 ### Fixed
