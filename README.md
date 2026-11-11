@@ -1,7 +1,7 @@
 # Continente MCP add-on for Home Assistant
 
 A Home Assistant add-on that runs the original [`continentept-mcp`](https://www.npmjs.com/package/continentept-mcp)
-(installed unchanged from npm, pinned at **0.12.1**) and exposes it as an **MCP server over streamable HTTP** that any
+(installed unchanged from npm, pinned at **0.13.0**) and exposes it as an **MCP server over streamable HTTP** that any
 AI agent can use: Claude, an OpenAI agent, n8n, [Cesto](https://github.com/jpch/cesto-ha) or your own scripts.
 
 It holds the Continente account and session, signs in on demand through a browser shown on the add-on page
@@ -15,9 +15,13 @@ This is an independent project, not affiliated with Continente or with the autho
 - Every agent token can use the catalogue tools (search, products, labels, favourites, orders read-only) and
   **read and change the cart** (`add_cart_item`, `set_cart_item_quantity`, `remove_cart_item`, `clear_cart`).
 - **Checkout and payment are blocked by default.** Any tool whose name looks like checkout, payment, placing an
-  order, delivery slots, vouchers, coupons, billing or cards is hidden from `tools/list` and refused. The option
-  `allow_checkout` (default **false**) unblocks such tools. `continentept-mcp` 0.12.1 has none, so today the option
-  changes nothing.
+  order, delivery slots, billing or cards is hidden from `tools/list` and refused. The option `allow_checkout`
+  (default **false**) unblocks such tools. `continentept-mcp` 0.13.0 has no checkout or payment tool, so today the
+  option changes nothing.
+- **Coupons and vouchers are never exposed** (1.0.3). `continentept-mcp` 0.13.0 adds `list_coupons` (reads the
+  Cartão Continente coupons) and `set_cart_coupons` (changes which coupons the cart uses). Both are in the reviewed
+  snapshot but hidden and refused for every token, whatever `allow_checkout` says; how to offer them is still under
+  review.
 - Tools that are not in the reviewed contract snapshot (`continente_mcp/server/contract/upstream-tools.json`) are
   never listed or called, whatever the options.
 - Every cart change is written to the add-on log with the agent name, e.g.
@@ -83,7 +87,7 @@ merges and releases; otherwise the PR waits for a human review.
 
 | Option | Default | |
 |---|---|---|
-| `allow_checkout` | `false` | Expose checkout/payment-like tools (none exist in 0.12.1). |
+| `allow_checkout` | `false` | Expose checkout/payment-like tools (none exist in 0.13.0). Never exposes coupon or voucher tools. |
 | `log_level` | `info` | |
 
 ## Security
@@ -99,7 +103,7 @@ cd continente_mcp/server
 npm ci
 npm test            # unit, policy and HTTP tests against a fake continentept-mcp
 npm run typecheck
-npm install -g --ignore-scripts continentept-mcp@0.12.1 && npm run contract:check
+npm install -g --ignore-scripts continentept-mcp@0.13.0 && npm run contract:check
 ```
 
 Licence: MIT.

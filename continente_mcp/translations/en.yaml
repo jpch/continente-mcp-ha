@@ -1,7 +1,7 @@
 configuration:
   allow_checkout:
     name: Allow checkout and payment tools
-    description: "Off (default): any tool that looks like checkout, payment, placing an order, delivery slots, vouchers or cards is hidden and refused for every token. On: such tools, if continentept-mcp ever offers one and it passed the contract review, become available to every token. continentept-mcp 0.12.1 has none."
+    description: "Off (default): any tool that looks like checkout, payment, placing an order, delivery slots, billing or cards is hidden and refused for every token. On: such tools, if continentept-mcp ever offers one and it passed the contract review, become available to every token. continentept-mcp 0.13.0 has none. Coupon and voucher tools are never available, not even with this on."
   log_level:
     name: Log level
 network:
