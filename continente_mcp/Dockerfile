@@ -11,7 +11,7 @@ RUN npm run typecheck && npm test && npm run build && npm prune --omit=dev
 
 FROM ${BUILD_FROM}
 # The original continentept-mcp from npm, unchanged and pinned (upstream-bump.yaml proposes updates).
-ARG CONTINENTEPT_MCP_VERSION=0.13.0
+ARG CONTINENTEPT_MCP_VERSION=0.14.0
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules

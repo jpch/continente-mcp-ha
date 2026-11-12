@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-12
+### Changed
+- Installed `continentept-mcp` updated from 0.13.0 to 0.14.0 (automated update; the tool contract changed and was reviewed before merging).
+
 ## [1.0.3] - 2026-11-11
 ### Changed
 - `continentept-mcp` updated from 0.12.1 to 0.13.0 (reviewed). The only change to the 15 existing tools is in the

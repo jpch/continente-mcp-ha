@@ -1,5 +1,5 @@
 name: Continente MCP
-version: "1.0.3"
+version: "1.0.4"
 slug: continente_mcp
 description: Continente (continentept-mcp) as an MCP server over HTTP for any AI agent, with per-agent tokens, sign-in through noVNC and checkout blocked by default.
 url: https://github.com/jpch/continente-mcp-ha
