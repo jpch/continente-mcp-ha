@@ -7,7 +7,7 @@ export interface Config {
   allowCheckout: boolean;
   logLevel: LogLevel;
   dataDir: string;
-  /** Folder shared with other add-ons (`/share/continente-mcp`): endpoint file, token requests, session hand-off. */
+  /** Folder shared with other add-ons (`/share/continente-mcp`): endpoint file and token requests. */
   shareDir: string | null;
   port: number;
   /** Source address of the Home Assistant ingress proxy. */
@@ -45,3 +45,13 @@ export function addonSlug(env: NodeJS.ProcessEnv, hostname: string | null): stri
   const slug = `${m[1]}_${m[2]!.replace(/-/g, '_')}`;
   return SLUG.test(slug) ? slug : null;
 }
+
+/**
+ * Environment of the continentept-mcp server process. The sign-in (`login --show-browser`) gets the same
+ * data directory, so it reads the same `credentials.env` and saves `session.json` for the same account:
+ * continentept-mcp 0.15.0 only loads a session saved for the configured account, so a sign-in through the
+ * add-on page is always one the server then uses (no sign-in loop).
+ */
+export const upstreamEnv = (continenteDir: string): Record<string, string> => ({ CONTINENTE_DATA_DIR: continenteDir });
+export const loginEnv = (continenteDir: string, display: string): Record<string, string> => ({ ...upstreamEnv(continenteDir), DISPLAY: display });
+export const LOGIN_ARGS = ['login', '--show-browser'];

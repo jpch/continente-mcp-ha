@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -80,50 +80,27 @@ describe('token store', () => {
   });
 });
 
-describe('session hand-off', () => {
-  const handoff = (share: string) => {
-    const imp = join(share, 'import');
-    mkdirSync(join(imp, 'profile'), { recursive: true });
-    writeFileSync(join(imp, 'credentials.env'), "CONTINENTE_EMAIL='a@b.pt'\n");
-    writeFileSync(join(imp, 'profile', 'cookies'), 'c');
-    return imp;
-  };
-  it('imports into an empty data folder and deletes the hand-off', () => {
-    const d = tmp(); const share = new ShareDir(join(d, 'share')); const target = join(d, 'continente');
-    const imp = handoff(share.dir);
-    expect(share.importSession(target)).toBe('none');
-    writeFileSync(join(imp, 'READY'), '');
-    symlinkSync('/etc/passwd', join(imp, 'link'));
-    expect(share.importSession(target)).toBe('imported');
-    expect(readFileSync(join(target, 'profile', 'cookies'), 'utf8')).toBe('c');
-    expect(statSync(join(target, 'credentials.env')).mode & 0o777).toBe(0o600);
-    expect(existsSync(join(target, 'link'))).toBe(false);
-    expect(existsSync(join(target, 'READY'))).toBe(false);
-    expect(existsSync(imp)).toBe(false);
+describe('shared folder', () => {
+  it('deletes a leftover session hand-off from Cesto 1.x without reading it, and never imports it', () => {
+    const d = tmp(); const share = new ShareDir(join(d, 'share'));
+    expect(share.discardLegacyHandoff()).toBe(false);
+    for (const name of ['import', 'import.tmp']) {
+      mkdirSync(join(share.dir, name, 'profile'), { recursive: true });
+      writeFileSync(join(share.dir, name, 'credentials.env'), "CONTINENTE_EMAIL='a@b.pt'\n");
+    }
+    writeFileSync(join(share.dir, 'import', 'READY'), '');
+    expect(share.discardLegacyHandoff()).toBe(true);
+    expect(existsSync(join(share.dir, 'import'))).toBe(false);
+    expect(existsSync(join(share.dir, 'import.tmp'))).toBe(false);
+    expect(existsSync(join(d, 'continente'))).toBe(false);
+    expect('importSession' in share).toBe(false);
   });
-  it('never overwrites an existing session', () => {
-    const d = tmp(); const share = new ShareDir(join(d, 'share')); const target = join(d, 'continente');
-    mkdirSync(target); writeFileSync(join(target, 'credentials.env'), 'own');
-    const imp = handoff(share.dir); writeFileSync(join(imp, 'READY'), '');
-    expect(share.importSession(target)).toBe('skipped');
-    expect(readFileSync(join(target, 'credentials.env'), 'utf8')).toBe('own');
-    expect(existsSync(imp)).toBe(false);
-  });
-  it('imports over a browser profile the upstream created on its first start', () => {
-    const d = tmp(); const share = new ShareDir(join(d, 'share')); const target = join(d, 'continente');
-    mkdirSync(join(target, 'profile'), { recursive: true }); writeFileSync(join(target, 'profile', 'cookies'), 'fresh');
-    const imp = handoff(share.dir); writeFileSync(join(imp, 'READY'), '');
-    expect(share.importSession(target)).toBe('imported');
-    expect(readFileSync(join(target, 'profile', 'cookies'), 'utf8')).toBe('c');
-    expect(existsSync(join(target, 'credentials.env'))).toBe(true);
-  });
-  it('never replaces a session that was valid before', () => {
-    const d = tmp(); const share = new ShareDir(join(d, 'share')); const target = join(d, 'continente');
-    mkdirSync(join(target, 'profile'), { recursive: true }); writeFileSync(join(target, 'profile', 'cookies'), 'own');
-    const imp = handoff(share.dir); writeFileSync(join(imp, 'READY'), '');
-    expect(share.importSession(target, true)).toBe('skipped');
-    expect(readFileSync(join(target, 'profile', 'cookies'), 'utf8')).toBe('own');
-    expect(existsSync(imp)).toBe(false);
+  it('removes a symbolic link named import without following it', () => {
+    const d = tmp(); const share = new ShareDir(join(d, 'share')); const outside = join(d, 'outside');
+    mkdirSync(outside); writeFileSync(join(outside, 'keep'), 'x'); mkdirSync(share.dir, { recursive: true });
+    symlinkSync(outside, join(share.dir, 'import'));
+    expect(share.discardLegacyHandoff()).toBe(true);
+    expect(readFileSync(join(outside, 'keep'), 'utf8')).toBe('x');
   });
   it('writes an endpoint file without secrets and ignores malformed requests', () => {
     const d = tmp(); const share = new ShareDir(join(d, 'share'));

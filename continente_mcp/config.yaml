@@ -1,5 +1,5 @@
 name: Continente MCP
-version: "1.0.3"
+version: "1.0.4"
 slug: continente_mcp
 description: Continente (continentept-mcp) as an MCP server over HTTP for any AI agent, with per-agent tokens, sign-in through noVNC and checkout blocked by default.
 url: https://github.com/jpch/continente-mcp-ha
@@ -19,7 +19,7 @@ ports:
   8100/tcp: 8100
 ports_description:
   8100/tcp: MCP endpoint for agents on the home network (/mcp, token required)
-# /share/continente-mcp: endpoint file, token requests from other add-ons, one-time session hand-off.
+# /share/continente-mcp: endpoint file and token requests from other add-ons.
 map:
   - share:rw
 options:

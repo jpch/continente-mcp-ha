@@ -19,6 +19,7 @@ Independent project, not affiliated with Continente or with the author of `conti
   (`list_coupons`, `set_cart_coupons`) are never exposed, not even with `allow_checkout`.
 - Only tools in the reviewed contract snapshot (`continente_mcp/server/contract/upstream-tools.json`) are ever
   listed or called.
+- When Continente needs a sign-in, the tool error tells the agent to ask you to sign in on the add-on page.
 - Every cart change is logged with the agent name, e.g.
   `[cart] agent="Cesto" tool=set_cart_item_quantity product=4421406 quantity=2 status=success ms=1830`.
 
@@ -62,8 +63,6 @@ The add-on maps `/share` and uses `/share/continente-mcp`:
 - `endpoint.json`: host name, port and slug, so other add-ons can find it. No secret.
 - `requests/<name>.json`: another add-on asks for a token by writing only its SHA-256 hash and a name. The request
   appears on the add-on page with a fingerprint and does nothing until an administrator approves it.
-- `import/`: a one-time session hand-off from another add-on, accepted only while this add-on has no saved account
-  and has never had a valid session, and deleted immediately either way.
 
 ## Options
 

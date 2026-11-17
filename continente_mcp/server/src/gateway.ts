@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { isCartChange, isCheckoutTool, isNeverExposed, type ToolPolicy } from './policy.js';
 import { QueueFullError, type SerialQueue } from './queue.js';
+import { haSignIn } from './signin.js';
 import { resultOf, type SessionTracker, type Upstream } from './upstream.js';
 import type { PublicToken } from './tokens.js';
 
@@ -66,6 +67,8 @@ export class Gateway {
     let result: CallToolResult;
     try {
       result = await this.o.queue.run(() => this.o.upstream.callTool(name, args), agent.priority ? 'priority' : 'normal');
+      // Upstream sign-in help (terminal command, copying session.json) does not apply here: point at the add-on page.
+      result = haSignIn(result);
     } catch (e) {
       if (isCartChange(name)) this.o.auditLog(`[cart] ${who} tool=${name} ${describeArgs(args)} status=failed ms=${Date.now() - started}`);
       if (e instanceof QueueFullError) return errorResult('busy', e.message);

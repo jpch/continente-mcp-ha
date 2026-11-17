@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildApp } from './app.js';
-import { loadConfig } from './config.js';
+import { LOGIN_ARGS, loadConfig, loginEnv, upstreamEnv } from './config.js';
 import { CredentialsStore } from './credentials.js';
 import { Gateway } from './gateway.js';
 import { LoginService } from './login.js';
@@ -22,7 +22,7 @@ const log = (line: string) => console.log(line);
 
 const continenteDir = join(config.dataDir, 'continente');
 const mcpCommand = process.env.MCP_COMMAND ?? 'continentept-mcp';
-const upstream = new StdioUpstream({ command: mcpCommand, env: { CONTINENTE_DATA_DIR: continenteDir } });
+const upstream = new StdioUpstream({ command: mcpCommand, env: upstreamEnv(continenteDir) });
 const queue = new SerialQueue(50);
 const session = new SessionTracker();
 const policy = new ToolPolicy((contract.tools ?? []).map(t => t.name), () => config.allowCheckout);
@@ -37,8 +37,8 @@ const WS_PORT = 6080;
 const login = new LoginService({
   display: { command: 'Xvnc', args: [':99', '-geometry', '1280x860', '-depth', '24', '-SecurityTypes', 'None', '-localhost', 'yes', '-rfbport', String(VNC_PORT), '-AlwaysShared'] },
   websockify: { command: 'websockify', args: ['--web', '/usr/share/novnc', `127.0.0.1:${WS_PORT}`, `127.0.0.1:${VNC_PORT}`] },
-  login: { command: mcpCommand, args: ['login', '--show-browser'] },
-  env: { DISPLAY: ':99', CONTINENTE_DATA_DIR: continenteDir },
+  login: { command: mcpCommand, args: LOGIN_ARGS },
+  env: loginEnv(continenteDir, ':99'),
 });
 
 // A new session or new credentials are only read by a fresh upstream process.
@@ -55,24 +55,15 @@ const checkSession = (): Promise<boolean | null> => {
 };
 login.on('success', () => { restartUpstream(); lastCheck = 0; void checkSession(); });
 login.on('failed', () => log('[login] sign-in did not complete'));
-// Marks that this add-on has had a working session of its own, so a later hand-off never replaces it.
-const sessionMarker = join(config.dataDir, 'session-established');
-session.on('session', (v: boolean | null) => {
-  log(`[session] valid=${v}`);
-  if (v === true && !existsSync(sessionMarker)) writeFileSync(sessionMarker, '', { mode: 0o600 });
-});
+session.on('session', (v: boolean | null) => log(`[session] valid=${v}`));
 
-// One-time hand-off of an existing session (Cesto before 2.0.0) and the endpoint file for other add-ons.
+// The endpoint file for other add-ons. A leftover session hand-off from Cesto before 2.0.0 is deleted unread.
 const pollShare = () => {
   if (!share) return;
   try {
     share.writeEndpoint({ slug: config.addonSlug, hostname: config.hostname, port: config.port, version });
-    const r = share.importSession(continenteDir, existsSync(sessionMarker));
-    if (r !== 'none') {
-      log(r === 'imported' ? '[migration] imported a Continente session and credentials handed off by another add-on' : '[migration] ignored a handed-off session: this add-on already has one');
-      if (r === 'imported') { restartUpstream(); lastCheck = 0; void checkSession(); }
-    }
-  } catch (e) { log(`[migration] hand-off failed: ${(e as Error).name}`); }
+    if (share.discardLegacyHandoff()) log('[share] deleted a leftover session hand-off folder without reading it (no longer used)');
+  } catch (e) { log(`[share] shared folder update failed: ${(e as Error).name}`); }
 };
 pollShare();
 setInterval(pollShare, 5_000).unref();

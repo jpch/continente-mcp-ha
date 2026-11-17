@@ -5,6 +5,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-17
+### Changed
+- `continentept-mcp` updated from 0.13.0 to 0.15.0 (reviewed; 0.14.0 skipped). No tool was added or removed. Output
+  changes: prices and unit prices can be `per: "dose"` (detergents, per wash); promotions gain `takePay`
+  (`Leve X Pague Y`, nullable); `search_products` gains the `promotion` input and the `favoritesPromoted` output;
+  `list_coupons.cartSelection` can be `unknown`; the sign-in details give `npx -y continentept-mcp login --show-browser`.
+- The saved Continente session is now tied to the saved account (upstream 0.15.0). A session saved by an earlier
+  version is not used: sign in once on the add-on page after updating. The sign-in on the page and the server read the
+  same account, so that sign-in is the one the server uses.
+- Sign-in errors tell agents to ask the user to sign in on the Continente MCP add-on page, instead of the upstream
+  advice to run `npx … login` or copy `session.json`, which does not apply here.
+### Removed
+- The one-time session hand-off from Cesto before 2.0.0 (`/share/continente-mcp/import/`). A leftover hand-off folder
+  is deleted without being read.
+
 ## [1.0.3] - 2026-11-11
 ### Changed
 - `continentept-mcp` updated from 0.12.1 to 0.13.0 (reviewed). The only change to the 15 existing tools is in the

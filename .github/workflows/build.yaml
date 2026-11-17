@@ -49,7 +49,9 @@ jobs:
           npm install -g --ignore-scripts "continentept-mcp@${version}"
       - name: Contract and policy tests
         working-directory: continente_mcp/server
-        run: npx vitest run test/units.test.ts
+        env:
+          REQUIRE_UPSTREAM: "1"
+        run: npx vitest run test/units.test.ts test/session-binding.test.ts
       - name: Live schema check (tools/list over stdio)
         working-directory: continente_mcp/server
         run: |

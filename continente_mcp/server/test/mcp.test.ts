@@ -112,6 +112,31 @@ describe('MCP over streamable HTTP', () => {
     await expect(c.listTools()).rejects.toThrow();
   });
 
+  it("rewrites continentept-mcp's sign-in help: agents are sent to the add-on page, never to npx or session.json", async () => {
+    const s = await start({}, { FAKE_MCP_MODE: 'sign_in' });
+    const { token } = s.tokens.create('agent');
+    const c = await s.connect({ authorization: `Bearer ${token}` });
+    for (const [name, args] of [['get_cart', {}], ['set_cart_item_quantity', { productId: '4421406', quantity: 2 }]] as const) {
+      const r = await c.callTool({ name, arguments: args });
+      expect(r.isError).toBe(true);
+      const all = JSON.stringify(r);
+      for (const banned of ['session.json', 'npx', 'continentept-mcp login', '--show-browser', 'CONTINENTE_DATA_DIR', 'CONTINENTE_EMAIL', 'Claude Desktop'])
+        expect(all, banned).not.toContain(banned);
+      expect(all).toContain('Continente MCP add-on page in Home Assistant');
+      const res = (r.structuredContent as { result: Record<string, unknown> }).result;
+      expect(res.status).toBe('error');
+      expect(res.error).toMatchObject({ code: 'not_authenticated', retryable: false });
+      expect(res).not.toHaveProperty('signIn');
+      if (name === 'set_cart_item_quantity') {
+        expect(res.mutation).toEqual({ outcome: 'not_applied' });
+        expect((r.content as { text: string }[])[0]!.text).toMatch(/\nThe cart was not changed\.$/);
+      }
+    }
+    expect(s.session.valid).toBe(false);
+    // Search works signed out and is passed through untouched.
+    expect((await c.callTool({ name: 'search_products', arguments: { query: 'leite' } })).isError).toBeFalsy();
+  });
+
   it('tracks the session from upstream results', async () => {
     const s = await start({}, { FAKE_MCP_MODE: 'not_authenticated' });
     const { token } = s.tokens.create('agent');

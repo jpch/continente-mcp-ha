@@ -1,4 +1,4 @@
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { HASH } from './tokens.js';
 
@@ -9,8 +9,9 @@ import { HASH } from './tokens.js';
  *  - `requests/<name>.json`: an add-on asks for a token. It generated the token itself and writes only
  *    its SHA-256 hash; an admin approves it on the add-on page. A fake request gives nothing unless an
  *    admin approves it, and the page shows a fingerprint the requester also shows.
- *  - `import/`: one-time hand-off of an existing Continente session and credentials (Cesto before
- *    2.0.0). Imported only when this add-on has none, then deleted at once.
+ *
+ * Sessions and credentials never pass through it: the one-time session hand-off from Cesto 1.x is gone
+ * (1.0.4), and a leftover `import/` folder is deleted unread.
  */
 export interface TokenRequest { name: string; hash: string; priority: boolean; requested_at: string | null; fingerprint: string }
 
@@ -60,28 +61,19 @@ export class ShareDir {
   }
 
   /**
-   * Moves a handed-off session into `target` when this add-on has none of its own: no saved account
-   * (`credentials.env`) and no session that was ever valid (`hadSession`). A browser profile that the
-   * upstream created on its first start does not count. Only regular files and folders are copied
-   * (symbolic links are skipped). The hand-off folder is always deleted.
+   * Deletes a leftover session hand-off (`import/`, `import.tmp/`) from Cesto before 2.0.0 without
+   * reading it, so no Continente password or session stays in the shared folder. True when one was there.
    */
-  importSession(target: string, hadSession = false): 'none' | 'imported' | 'skipped' {
-    const src = join(this.dir, 'import');
-    if (!existsSync(src) || !existsSync(join(src, 'READY'))) return 'none';
-    try {
-      const hasOwn = hadSession || existsSync(join(target, 'credentials.env'));
-      if (hasOwn) return 'skipped';
-      mkdirSync(target, { recursive: true, mode: 0o700 });
-      cpSync(src, target, {
-        recursive: true, dereference: false, errorOnExist: false, force: true,
-        filter: p => { const s = lstatSync(p); return (s.isFile() || s.isDirectory()) && !p.endsWith('/READY'); },
-      });
-      chmodSync(target, 0o700);
-      const creds = join(target, 'credentials.env');
-      if (existsSync(creds)) chmodSync(creds, 0o600);
-      return 'imported';
-    } finally {
-      rmSync(src, { recursive: true, force: true });
+  discardLegacyHandoff(): boolean {
+    let found = false;
+    for (const name of ['import', 'import.tmp']) {
+      const p = join(this.dir, name);
+      if (!existsSync(p) && !isLink(p)) continue;
+      rmSync(p, { recursive: true, force: true });
+      found = true;
     }
+    return found;
   }
 }
+
+const isLink = (p: string) => { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } };
