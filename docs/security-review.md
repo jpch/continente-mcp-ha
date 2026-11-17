@@ -26,3 +26,17 @@ Verdict: **no Critical or High findings; release allowed.** Medium findings are 
 ## 1.0.2 addendum
 
 - Finding #8 (session hand-off through `/share`) re-checked after the import fix: the import window is unchanged in practice. It is open only while the add-on has no saved account and has never had a valid session. After the first valid session (marker `/data/session-established`) or once an account is saved, no hand-off is accepted. Severity stays Medium (accepted).
+
+## 1.0.4 addendum
+
+Reviewed 2026-11-17 (PR #19, `continentept-mcp` 0.15.0) before release. Verdict: **no Critical, High or Medium findings; release allowed.**
+
+| # | Area | Finding | Severity | Status |
+|---|---|---|---|---|
+| 15 | Upstream contract | 0.13.0 → 0.15.0 adds no tool (17 upstream, 15 listed). New fields: `per: dose`, `takePay`, `favoritesPromoted`, `cartSelection: unknown`, optional `search_products.promotion`. Nothing new touches checkout, payment, orders, slots or coupons. The live `tools/list` matches the committed snapshot. | None | OK |
+| 16 | Coupons | `list_coupons` and `set_cart_coupons` stay unlisted and refused for every token, with or without `allow_checkout` (`NEVER_EXPOSED_TOOL`; tests unchanged and passing). A sign-in error after an unknown cart outcome never points the agent at `list_coupons`: the text says `get_cart` and the structured `recovery.action` is rewritten to `get_cart`. | None | OK |
+| 17 | Sign-in message | Upstream sign-in errors (terminal command, `session.json`, environment variables, guide link) are replaced with fixed text: ask the user to sign in on the Continente MCP add-on page. Nothing from the upstream message is copied into the new text; the error code is kept only if it matches `^[a-z_]{1,40}$`. The optional `signIn` object is dropped, so the result still validates against the snapshot. | None | OK |
+| 18 | Session binding | 0.15.0 ties the session to the configured account. The add-on page sign-in and the server read the same `credentials.env` and session file (`upstreamEnv` / `loginEnv`); a test against the real 0.15.0 package shows the saved session is used (no sign-in loop), a pre-0.15 session is ignored until one new sign-in, and another account's session is not used. | None | OK |
+| 19 | Session hand-off (finding #8) | Removed. A leftover `/share/continente-mcp/import/` or `import.tmp/` is deleted without being read; a symlink is removed without being followed. Finding #8 is closed. | None | Resolved |
+| 20 | Supply chain | `continentept-mcp` 0.15.0 (npm integrity `sha512-KhlP8kkj…FyNg==`, published 2026-11-12). `npm audit` on its tree and on the add-on lockfile: 0 vulnerabilities. Installed by pinned version without an integrity pin in the Dockerfile and the CI contract job (unchanged from earlier releases). | Low | Accepted |
+| 21 | GitHub Actions | Only change: the contract job also runs `test/session-binding.test.ts` with `REQUIRE_UPSTREAM=1`. No new permissions, secrets or triggers. | None | OK |

@@ -42,3 +42,18 @@ describe('Home Assistant sign-in guidance', () => {
     for (const m of Object.values(HA_SIGN_IN)) expect(m).not.toMatch(/session\.json|npx|--show-browser|CONTINENTE_/);
   });
 });
+
+describe('mutation note', () => {
+  it('never points the agent at a coupon tool', () => {
+    const r = haSignIn({
+      isError: true,
+      content: [{ type: 'text', text: 'Error (not_authenticated): Run npx -y continentept-mcp login --show-browser' }],
+      structuredContent: { result: { status: 'error', error: { code: 'not_authenticated', message: 'x', retryable: false },
+        mutation: { outcome: 'unknown', recovery: { action: 'list_coupons' } } } },
+    });
+    const text = (r.content[0] as { text: string }).text;
+    expect(text).toContain('Call get_cart');
+    expect(text).not.toMatch(/coupon/i);
+    expect(JSON.stringify(r.structuredContent)).not.toMatch(/coupon/i);
+  });
+});

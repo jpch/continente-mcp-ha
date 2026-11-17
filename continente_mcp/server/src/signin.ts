@@ -50,8 +50,8 @@ export function isSignInError(r: CallToolResult): boolean {
 const mutationNote = (m: ErrorEnvelope['mutation']) => {
   if (!m) return '';
   if (m.outcome === 'unknown') {
-    const action = m.recovery?.action === 'get_cart' || m.recovery?.action === 'list_coupons' ? m.recovery.action : 'get_cart';
-    return `\nThe cart may have changed. Call ${action} before making another change; do not repeat this request automatically.`;
+    // Always get_cart: list_coupons is never available here, so an upstream hint to call it is not repeated.
+    return '\nThe cart may have changed. Call get_cart before making another change; do not repeat this request automatically.';
   }
   return '\nThe cart was not changed.';
 };
@@ -63,7 +63,10 @@ export function haSignIn(r: CallToolResult): CallToolResult {
   const missing = e.signIn?.action === 'configure_credentials' || e.signIn?.credentials === 'missing';
   const message = `${missing ? HA_SIGN_IN.credentials : HA_SIGN_IN.sign_in} ${HA_SIGN_IN.public}`;
   const { signIn: _dropped, ...rest } = e;
-  const result = { ...rest, error: { ...e.error, message } };
+  const result: Record<string, unknown> = { ...rest, error: { ...e.error, message } };
+  if (e.mutation?.recovery?.action === 'list_coupons') {
+    result.mutation = { ...e.mutation, recovery: { ...e.mutation.recovery, action: 'get_cart' } };
+  }
   const code = typeof e.error.code === 'string' && /^[a-z_]{1,40}$/.test(e.error.code) ? e.error.code : 'not_authenticated';
   return {
     ...r,
