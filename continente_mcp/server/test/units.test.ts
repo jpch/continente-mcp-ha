@@ -50,7 +50,7 @@ describe('serial queue', () => {
     const first = q.run(() => new Promise<void>(r => { release = r; order.push('first'); }));
     const normal = q.run(async () => { order.push('normal'); });
     const prio = q.run(async () => { order.push('priority'); }, 'priority');
-    expect(q.waiting()).toEqual({ priority: 1, normal: 1 });
+    expect(q.waiting()).toEqual({ priority: 1, normal: 1, background: 0 });
     release();
     await Promise.all([first, normal, prio]);
     expect(order).toEqual(['first', 'priority', 'normal']);
@@ -126,4 +126,13 @@ describe.skipIf(!existsSync(translation('en')))('add-on option texts', () => {
       expect(line).not.toMatch(/continentept-mcp\s+\d+\.\d+\.\d+/);
     });
   }
+  it('every add-on option has a name in en and pt', () => {
+    const config = readFileSync(new URL('../../config.yaml', import.meta.url), 'utf8');
+    const schema = config.slice(config.indexOf('\nschema:\n') + 9).split('\n').filter(l => /^  [a-z_]+:/.test(l)).map(l => l.trim().split(':')[0]);
+    expect(schema).toContain('session_keepalive');
+    for (const lang of ['en', 'pt']) {
+      const text = readFileSync(translation(lang), 'utf8');
+      for (const key of schema) expect(text, `${lang}: ${key}`).toMatch(new RegExp(`\\n  ${key}:\\n    name: `));
+    }
+  });
 });

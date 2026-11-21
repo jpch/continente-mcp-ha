@@ -14,6 +14,8 @@ const TOOLS = ['search_products', 'get_product', 'get_product_labels', 'choose_p
   'get_order', 'list_frequently_bought_products', 'get_session_status'];
 if (process.env.FAKE_EXTRA_TOOLS) TOOLS.push(...process.env.FAKE_EXTRA_TOOLS.split(','));
 const mode = process.env.FAKE_MCP_MODE ?? 'ok';
+// Whether this process got a password from its environment (never the value): 'unset', 'empty' or 'set'.
+const password = () => (process.env.CONTINENTE_PASSWORD === undefined ? 'unset' : process.env.CONTINENTE_PASSWORD === '' ? 'empty' : 'set');
 // Verbatim from continentept-mcp 0.15.0 (dist/mcp/shopping.js) for a robot check where no window can open.
 const SIGN_IN_HELP = 'Sign-in needs you: Continente asks you to confirm you are not a robot, and no sign-in window can open where this server '
   + 'runs (for example in Docker or on a server without a screen). On a computer with a screen, run '
@@ -32,7 +34,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 server.setRequestHandler(CallToolRequestSchema, async req => {
   const { name, arguments: args = {} } = req.params;
-  if (process.env.FAKE_MCP_LOG) appendFileSync(process.env.FAKE_MCP_LOG, JSON.stringify({ name, args, pid: process.pid }) + '\n');
+  if (process.env.FAKE_MCP_LOG) appendFileSync(process.env.FAKE_MCP_LOG, JSON.stringify({ name, args, pid: process.pid, password: password() }) + '\n');
   if (mode === 'crash_once' && !existsSync(process.env.FAKE_MCP_STATE)) {
     writeFileSync(process.env.FAKE_MCP_STATE, 'crashed');
     process.exit(1);

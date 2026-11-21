@@ -2,6 +2,21 @@ configuration:
   allow_checkout:
     name: Permitir ferramentas de finalizar compra e pagamento
     description: "Desligado (predefinição): qualquer ferramenta que pareça finalizar compra, pagamento, fazer uma encomenda, horários de entrega, faturação ou cartões fica escondida e é recusada para todos os tokens. Ligado: essas ferramentas, se o continentept-mcp alguma vez oferecer uma e ela passar a revisão do contrato, ficam disponíveis para todos os tokens. A versão instalada não tem nenhuma. As ferramentas de cupões e vales nunca ficam disponíveis, nem com esta opção ligada."
+  session_keepalive:
+    name: Manter a sessão do Continente ativa
+    description: "Desligado (predefinição). Ligado: enquanto a sessão for válida, faz uma consulta só de leitura ao carrinho (get_cart) ao fim dos minutos definidos sem nenhum pedido ao Continente, para a sessão não terminar ao fim de cerca de 30 minutos parada. Espera sempre pelas chamadas dos agentes, para quando a sessão terminou e nunca inicia sessão."
+  session_keepalive_minutes:
+    name: Intervalo de manutenção (minutos)
+    description: "10 a 45, predefinição 15. Contado a partir do último pedido ao Continente, com uma variação aleatória de ±20%. O Continente termina uma sessão parada ao fim de cerca de 30 minutos."
+  session_keepalive_max_hours:
+    name: Limite de manutenção (horas)
+    description: "0 a 72, predefinição 6. A manutenção para estas horas depois do início de sessão (espera-se que o Continente termine a sessão ao fim de cerca de 6 horas de qualquer forma). 0: sem limite."
+  unattended_sign_in:
+    name: Iniciar sessão de novo sem si
+    description: "Ligado (predefinição, como antes): quando a sessão termina, o continentept-mcp inicia sessão sozinho num browser escondido com a palavra-passe guardada. Não resulta quando o Continente pede \"Não sou um robô\". Desligado: nunca inicia sessão sozinho; inicia sessão na página do add-on quando a notificação pedir."
+  session_sensor:
+    name: Sensor da sessão
+    description: "Desligado (predefinição). Ligado: publica binary_sensor.continente_mcp_session (ligado enquanto a sessão do Continente for válida). A notificação de sessão terminada aparece sempre."
   log_level:
     name: Nível de registo
 network:

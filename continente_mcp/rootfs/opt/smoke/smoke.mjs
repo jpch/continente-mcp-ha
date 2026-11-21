@@ -26,7 +26,9 @@ const unauth = await fetch('http://127.0.0.1:18100/mcp', { method: 'POST', heade
 const page = await fetch('http://127.0.0.1:18100/').then(r => r.status).catch(() => 0);
 server.kill();
 console.log(JSON.stringify({ health, unauthenticated_mcp: unauth, page_from_lan: page }));
-if (!health || health.allow_checkout !== false || unauth !== 401 || page !== 403) process.exit(1);
+// No options file: the defaults (checkout blocked, keep-alive off, unattended sign-in on as before 1.0.6).
+if (!health || health.allow_checkout !== false || health.session_keepalive?.enabled !== false || health.unattended_sign_in !== true
+  || unauth !== 401 || page !== 403) process.exit(1);
 
 const xvnc = spawn('Xvnc', [':98', '-geometry', '1024x768', '-depth', '24', '-SecurityTypes', 'None', '-localhost', 'yes', '-rfbport', '5998'], { stdio: 'ignore' });
 const ws = spawn('websockify', ['--web', '/usr/share/novnc', '127.0.0.1:16080', '127.0.0.1:5998'], { stdio: 'ignore' });

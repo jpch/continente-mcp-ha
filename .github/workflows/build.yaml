@@ -51,7 +51,7 @@ jobs:
         working-directory: continente_mcp/server
         env:
           REQUIRE_UPSTREAM: "1"
-        run: npx vitest run test/units.test.ts test/session-binding.test.ts
+        run: npx vitest run test/units.test.ts test/session-binding.test.ts test/keepalive.test.ts
       - name: Live schema check (tools/list over stdio)
         working-directory: continente_mcp/server
         run: |

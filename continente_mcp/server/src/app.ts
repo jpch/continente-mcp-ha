@@ -31,6 +31,10 @@ export interface AppDeps {
   log: (line: string) => void;
   webDir?: string;
   vncPort?: number;
+  /** Session keep-alive status (state and next check time, no secrets). */
+  keepAlive?: { status(): { enabled: boolean; state: string; next_at: string | null; checks: number } };
+  /** True when this add-on shows the session-expired notification in Home Assistant. */
+  haNotification?: boolean;
 }
 
 const apiError = (code: string, key: string) => ({ error: { code, message_key: key } });
@@ -69,6 +73,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   app.addHook('onSend', async (_req, reply) => { reply.header('cache-control', 'no-store'); reply.header('x-content-type-options', 'nosniff'); reply.header('referrer-policy', 'no-referrer'); });
 
+  const keepAlive = () => deps.keepAlive?.status() ?? { enabled: false, state: 'off', next_at: null, checks: 0 };
   const status = () => ({
     status: 'ok',
     version: deps.version,
@@ -78,6 +83,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     signing_in: deps.login?.active ?? false,
     credentials_configured: deps.credentials.status().configured,
     allow_checkout: config.allowCheckout,
+    unattended_sign_in: config.unattendedSignIn,
+    // Public: on/off and the state only; the next check time is on the admin status.
+    session_keepalive: { enabled: keepAlive().enabled, state: keepAlive().state },
+    ha_notification: deps.haNotification ?? false,
     queue_length: deps.queue.length,
     addon_slug: config.addonSlug,
   });
@@ -100,7 +109,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const loginStatus = () => ({ state: deps.login?.state ?? 'idle', started_at: deps.login?.startedAt ?? null, available: !!deps.login });
 
   app.get('/api/admin/status', async () => ({
-    ...status(), credentials: deps.credentials.status(), login: loginStatus(), tokens: tokens.list(), requests: pendingRequests(),
+    ...status(), session_keepalive: keepAlive(), credentials: deps.credentials.status(), login: loginStatus(), tokens: tokens.list(), requests: pendingRequests(),
   }));
 
   app.post<{ Body: { name?: unknown; priority?: unknown } }>('/api/admin/tokens', async (req, reply) => {

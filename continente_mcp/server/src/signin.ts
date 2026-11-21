@@ -56,11 +56,15 @@ const mutationNote = (m: ErrorEnvelope['mutation']) => {
   return '\nThe cart was not changed.';
 };
 
-/** Rewrites an upstream sign-in error for Home Assistant; any other result is returned unchanged. */
-export function haSignIn(r: CallToolResult): CallToolResult {
+/**
+ * Rewrites an upstream sign-in error for Home Assistant; any other result is returned unchanged.
+ * `credentialsSaved`: credentials are saved on the add-on page. With `unattended_sign_in` off the server runs without
+ * the password and reports credentials as missing; the user then only needs to sign in, not to save them again.
+ */
+export function haSignIn(r: CallToolResult, credentialsSaved = false): CallToolResult {
   if (!isSignInError(r)) return r;
   const e = envelope(r)!;
-  const missing = e.signIn?.action === 'configure_credentials' || e.signIn?.credentials === 'missing';
+  const missing = !credentialsSaved && (e.signIn?.action === 'configure_credentials' || e.signIn?.credentials === 'missing');
   const message = `${missing ? HA_SIGN_IN.credentials : HA_SIGN_IN.sign_in} ${HA_SIGN_IN.public}`;
   const { signIn: _dropped, ...rest } = e;
   const result: Record<string, unknown> = { ...rest, error: { ...e.error, message } };

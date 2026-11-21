@@ -1,15 +1,18 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildApp } from './app.js';
-import { LOGIN_ARGS, loadConfig, loginEnv, upstreamEnv } from './config.js';
+import { LOGIN_ARGS, loadConfig, loginEnv, probeEnv, upstreamEnv } from './config.js';
 import { CredentialsStore } from './credentials.js';
 import { Gateway } from './gateway.js';
+import { HaSessionNotifier } from './ha.js';
+import { SessionKeepAlive } from './keepalive.js';
 import { LoginService } from './login.js';
+import { probeSession } from './probe.js';
 import { ToolPolicy } from './policy.js';
 import { SerialQueue } from './queue.js';
 import { ShareDir } from './share.js';
 import { TokenStore } from './tokens.js';
-import { SessionTracker, StdioUpstream } from './upstream.js';
+import { SIGNED_IN_TOOLS, SessionTracker, StdioUpstream } from './upstream.js';
 
 const config = loadConfig();
 mkdirSync(config.dataDir, { recursive: true });
@@ -22,13 +25,19 @@ const log = (line: string) => console.log(line);
 
 const continenteDir = join(config.dataDir, 'continente');
 const mcpCommand = process.env.MCP_COMMAND ?? 'continentept-mcp';
-const upstream = new StdioUpstream({ command: mcpCommand, env: upstreamEnv(continenteDir) });
+const upstream = new StdioUpstream({ command: mcpCommand, env: upstreamEnv(continenteDir, config.unattendedSignIn) });
 const queue = new SerialQueue(50);
 const session = new SessionTracker();
 const policy = new ToolPolicy((contract.tools ?? []).map(t => t.name), () => config.allowCheckout);
-const gateway = new Gateway({ upstream, policy, queue, session, auditLog: log, version });
-const tokens = new TokenStore(join(config.dataDir, 'tokens.json'));
 const credentials = new CredentialsStore(config.dataDir);
+// Defined below; agent calls reach it only after the server listens.
+let keepAlive: SessionKeepAlive | undefined;
+const gateway = new Gateway({
+  upstream, policy, queue, session, auditLog: log, version,
+  // Only requests that surely reach Continente with the session restart the keep-alive wait.
+  onUpstreamCall: tool => { if (SIGNED_IN_TOOLS.has(tool)) keepAlive?.touch(); }, credentialsSaved: () => credentials.status().configured,
+});
+const tokens = new TokenStore(join(config.dataDir, 'tokens.json'));
 const share = config.shareDir ? new ShareDir(config.shareDir) : undefined;
 
 // On-demand sign-in: visible browser on a virtual display, viewed through noVNC on the ingress page.
@@ -48,14 +57,43 @@ let inFlight: Promise<boolean | null> | undefined;
 const checkSession = (): Promise<boolean | null> => {
   if (inFlight) return inFlight;
   if (Date.now() - lastCheck < 60_000) return Promise.resolve(session.valid);
-  inFlight = queue.run(async () => { session.observe(await upstream.callTool('get_cart', {})); return session.valid; }, 'normal')
+  inFlight = queue.run(async () => {
+    try { session.observe(await upstream.callTool('get_cart', {}), 'get_cart'); } finally { keepAlive?.touch(); }
+    return session.valid;
+  }, 'normal')
     .catch(() => session.valid)
     .finally(() => { lastCheck = Date.now(); inFlight = undefined; });
   return inFlight;
 };
 login.on('success', () => { restartUpstream(); lastCheck = 0; void checkSession(); });
 login.on('failed', () => log('[login] sign-in did not complete'));
-session.on('session', (v: boolean | null) => log(`[session] valid=${v}`));
+
+// Session keep-alive (option session_keepalive, off by default): read-only, background lane, never signs in.
+/** session.json is written only by a sign-in (on the page or unattended), so its time is the sign-in time. */
+const signedInAt = () => { try { return statSync(join(continenteDir, 'session.json')).mtimeMs; } catch { return null; } };
+keepAlive = new SessionKeepAlive({
+  enabled: config.sessionKeepalive,
+  intervalMs: config.sessionKeepaliveMinutes * 60_000,
+  maxSessionMs: config.sessionKeepaliveMaxHours * 3_600_000,
+  sessionValid: () => session.valid,
+  signedInAt,
+  signingIn: () => login.active,
+  probe: () => queue.run(() => probeSession(
+    () => new StdioUpstream({ command: mcpCommand, env: probeEnv(continenteDir), maxRestarts: 0 }),
+    r => session.observe(r, 'get_cart'),
+  ), 'background'),
+  log,
+});
+
+// The session-expired notification (and the optional binary_sensor) in Home Assistant.
+const supervisorToken = process.env.SUPERVISOR_TOKEN;
+const ha = supervisorToken ? new HaSessionNotifier({ token: supervisorToken, slug: () => config.addonSlug, sensor: config.sessionSensor, log }) : undefined;
+
+session.on('session', (v: boolean | null) => {
+  log(`[session] valid=${v}`);
+  keepAlive?.sessionChanged(v);
+  void ha?.update(v);
+});
 
 // The endpoint file for other add-ons. A leftover session hand-off from Cesto before 2.0.0 is deleted unread.
 const pollShare = () => {
@@ -70,12 +108,13 @@ setInterval(pollShare, 5_000).unref();
 
 const app = buildApp({
   config, version, upstreamVersion, tokens, gateway, queue, session, credentials, login, share, checkSession, log,
-  onCredentialsChanged: restartUpstream, vncPort: WS_PORT,
+  onCredentialsChanged: restartUpstream, vncPort: WS_PORT, keepAlive, haNotification: !!ha,
 });
 await app.listen({ host: '0.0.0.0', port: config.port });
 log(`[continente-mcp] MCP on :${config.port}/mcp (continentept-mcp ${upstreamVersion}, allow_checkout=${config.allowCheckout}, ${tokens.list().length} agent tokens)`);
+log(`[continente-mcp] session_keepalive=${config.sessionKeepalive}${config.sessionKeepalive ? ` every ${config.sessionKeepaliveMinutes} min ±20%, max ${config.sessionKeepaliveMaxHours || 'no limit'} h` : ''}, unattended_sign_in=${config.unattendedSignIn}, ha_notification=${!!ha}, session_sensor=${config.sessionSensor && !!ha}`);
 void checkSession();
 
-const shutdown = async () => { login.cancel(); await app.close(); await upstream.close(); process.exit(0); };
+const shutdown = async () => { keepAlive?.stop(); login.cancel(); await app.close(); await upstream.close(); process.exit(0); };
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);

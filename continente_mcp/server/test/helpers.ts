@@ -18,7 +18,7 @@ export const REVIEWED = contract.tools.map(t => t.name);
 
 export function setup(over: Partial<Config> = {}, env: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'cmcp-test-'));
-  const config: Config = { allowCheckout: false, logLevel: 'error', dataDir: dir, shareDir: join(dir, 'share'), port: 0, ingressAddress: '127.0.0.1', addonSlug: 'abc_continente_mcp', hostname: 'abc-continente-mcp', ...over };
+  const config: Config = { allowCheckout: false, logLevel: 'error', sessionKeepalive: false, sessionKeepaliveMinutes: 15, sessionKeepaliveMaxHours: 6, unattendedSignIn: true, sessionSensor: false, dataDir: dir, shareDir: join(dir, 'share'), port: 0, ingressAddress: '127.0.0.1', addonSlug: 'abc_continente_mcp', hostname: 'abc-continente-mcp', ...over };
   const log: string[] = [];
   const upstream = new StdioUpstream({ command: process.execPath, args: [FAKE], env: { FAKE_MCP_LOG: join(dir, 'calls.jsonl'), ...env } });
   const queue = new SerialQueue(50);

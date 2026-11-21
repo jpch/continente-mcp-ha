@@ -5,6 +5,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-11-21
+### Added
+- Session keep-alive, option `session_keepalive` (off by default). While the session is valid, one read-only
+  `get_cart` after `session_keepalive_minutes` (10–45, default 15, ±20% jitter) without a signed-in Continente request,
+  counted from the last one. It runs in the queue's new background lane, after every waiting agent call, in a
+  short-lived `continentept-mcp` process without the password, so it never signs in. It stops at the first
+  `not_authenticated` and `session_keepalive_max_hours` (0–72, default 6, 0 = no limit) after the sign-in.
+- Option `unattended_sign_in` (default on, the behaviour so far). Off: the server process gets no password, so
+  `continentept-mcp` never signs in on its own; sign-in happens only on the add-on page.
+- Home Assistant persistent notification (pt-PT) as soon as the session expires, with links to the add-on page and its
+  options; dismissed when the session is valid again. Optional `binary_sensor.continente_mcp_session` (option
+  `session_sensor`). The add-on now has `homeassistant_api: true`.
+- `/health` reports `unattended_sign_in`, `ha_notification` and the keep-alive state.
+### Changed
+- The session counts as valid only after a tool that always makes a signed-in request (cart tools, `list_orders`,
+  `list_frequently_bought_products`). A search or a cached answer no longer marks a signed-out session as valid.
+
 ## [1.0.5] - 2026-11-21
 ### Changed
 - `continentept-mcp` updated from 0.15.0 to 0.16.1 (reviewed). No tool was added or removed and every input and output

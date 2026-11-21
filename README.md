@@ -47,8 +47,24 @@ Away from home, go through Home Assistant ingress on the external Home Assistant
 header `X-Continente-MCP-Token: cmcp_…`: see [docs/remote-access.md](docs/remote-access.md). Do not forward port 8100.
 
 The server is stateless (no MCP session id) and answers with JSON. `GET /health` (no secrets) reports the version,
-the add-on slug, whether the Continente session is valid, whether a sign-in is open, the queue length and
-`allow_checkout`.
+the add-on slug, whether the Continente session is valid, whether a sign-in is open, the queue length,
+`allow_checkout`, `unattended_sign_in` and the keep-alive state.
+
+## Continente session
+
+Continente ends a session after about 30 minutes without requests (and probably after about 6 hours in any case).
+
+- **Keep-alive** (`session_keepalive`, off by default): while the session is valid, the add-on sends one read-only
+  `get_cart` when no Continente request was made for `session_keepalive_minutes` (default 15, ±20% random), counted
+  from the last request. It runs only when no agent call is waiting, in a separate `continentept-mcp` process without
+  the password, so it **never signs in**. It stops at the first expired result and `session_keepalive_max_hours`
+  (default 6, 0 = no limit) after the sign-in.
+- **Notification:** when the session expires, Home Assistant shows a persistent notification with a link to the
+  add-on page. It goes away by itself once the session is valid again. With `session_sensor` on, the add-on also
+  publishes `binary_sensor.continente_mcp_session`.
+- **Unattended sign-in** (`unattended_sign_in`, on by default): `continentept-mcp` may sign in again on its own in a
+  hidden browser with the saved password. Continente's "Não sou um robô" check stops it, and it is never answered
+  automatically. Turn it off to sign in only on the add-on page.
 
 ## Queue and priority
 
@@ -69,12 +85,18 @@ The add-on maps `/share` and uses `/share/continente-mcp`:
 | Option | Default | |
 |---|---|---|
 | `allow_checkout` | `false` | Expose checkout/payment-like tools, if a reviewed `continentept-mcp` version ever offers one. |
+| `session_keepalive` | `false` | Keep the Continente session alive with a read-only cart check (see above). |
+| `session_keepalive_minutes` | `15` | 10–45 minutes without requests before a check, ±20%. |
+| `session_keepalive_max_hours` | `6` | Stop the keep-alive this many hours after the sign-in; `0` = no limit. |
+| `unattended_sign_in` | `true` | Let `continentept-mcp` sign in again on its own with the saved password. |
+| `session_sensor` | `false` | Publish `binary_sensor.continente_mcp_session`. |
 | `log_level` | `info` | `debug`, `info`, `warning` or `error`. |
 
 ## Security
 
 - Tokens are random 256-bit values; only their SHA-256 hashes are stored (`/data/tokens.json`, mode 0600).
 - The page and admin API answer only through Home Assistant ingress, for Home Assistant administrators.
+- The add-on uses the Home Assistant Core API (`homeassistant_api`) only for the session notification and sensor.
 - The Continente password is write-only; tokens, passwords and cookies are never logged.
 - Report vulnerabilities privately: see [SECURITY.md](SECURITY.md) and the
   [security review](docs/security-review.md).

@@ -73,13 +73,29 @@ export class StdioUpstream implements Upstream {
   async close(): Promise<void> { const c = this.client; this.client = undefined; await c?.close().catch(() => undefined); }
 }
 
+/**
+ * Tools that always make a signed-in request to Continente: a success from one of them shows the session is valid,
+ * and the request keeps it alive. Catalogue tools (search, products, labels, choose_products) also work signed out;
+ * `list_favorites` and `get_order` can answer from a cache, and `get_session_status` makes no request at all, so
+ * their successes say nothing about the session.
+ */
+export const SIGNED_IN_TOOLS: ReadonlySet<string> = new Set(['get_cart', 'preview_cart_changes', 'add_cart_item', 'set_cart_item_quantity',
+  'remove_cart_item', 'clear_cart', 'list_orders', 'list_frequently_bought_products']);
+
+/** true: signed in; false: not signed in (`not_authenticated`); null: this result says nothing about the session. */
+export function sessionEvidence(r: CallToolResult, tool: string): boolean | null {
+  const res = resultOf(r);
+  if (res?.error?.code === 'not_authenticated') return false;
+  return SIGNED_IN_TOOLS.has(tool) && res?.status !== undefined && res.status !== 'error' ? true : null;
+}
+
 /** Tracks the Continente session from every result. Emits `session` (boolean) on changes. */
 export class SessionTracker extends EventEmitter {
   valid: boolean | null = null;
   checkedAt: string | null = null;
-  observe(r: CallToolResult): void {
-    const res = resultOf(r);
-    const next = res?.error?.code === 'not_authenticated' ? false : res?.status && res.status !== 'error' ? true : this.valid;
+  observe(r: CallToolResult, tool: string): void {
+    const next = sessionEvidence(r, tool);
+    if (next === null) return;
     this.checkedAt = new Date().toISOString();
     if (next !== this.valid) { this.valid = next; this.emit('session', next); }
   }

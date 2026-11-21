@@ -1,5 +1,5 @@
 name: Continente MCP
-version: "1.0.5"
+version: "1.0.6"
 slug: continente_mcp
 description: Continente (continentept-mcp) as an MCP server over HTTP for any AI agent, with per-agent tokens, sign-in through noVNC and checkout blocked by default.
 url: https://github.com/jpch/continente-mcp-ha
@@ -19,12 +19,24 @@ ports:
   8100/tcp: 8100
 ports_description:
   8100/tcp: MCP endpoint for agents on the home network (/mcp, token required)
+# 1.0.6: Core API only (Supervisor proxy), for the session-expired notification and the optional session sensor.
+homeassistant_api: true
 # /share/continente-mcp: endpoint file and token requests from other add-ons.
 map:
   - share:rw
 options:
   allow_checkout: false
+  session_keepalive: false
+  session_keepalive_minutes: 15
+  session_keepalive_max_hours: 6
+  unattended_sign_in: true
+  session_sensor: false
   log_level: info
 schema:
   allow_checkout: bool
+  session_keepalive: bool
+  session_keepalive_minutes: int(10,45)
+  session_keepalive_max_hours: int(0,72)
+  unattended_sign_in: bool
+  session_sensor: bool
   log_level: list(debug|info|warning|error)

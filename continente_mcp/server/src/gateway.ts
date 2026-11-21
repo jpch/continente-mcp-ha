@@ -30,6 +30,10 @@ export interface GatewayOptions {
   auditLog: (line: string) => void;
   version: string;
   callsPerMinute?: number;
+  /** Called after every upstream tool call that went out, with its name (the keep-alive counts from the last one). */
+  onUpstreamCall?: (tool: string) => void;
+  /** Whether credentials are saved on the add-on page (with `unattended_sign_in` off the server sees no password). */
+  credentialsSaved?: () => boolean;
 }
 
 const errorResult = (code: string, message: string): CallToolResult => ({
@@ -66,15 +70,15 @@ export class Gateway {
     const started = Date.now();
     let result: CallToolResult;
     try {
-      result = await this.o.queue.run(() => this.o.upstream.callTool(name, args), agent.priority ? 'priority' : 'normal');
+      result = await this.o.queue.run(() => this.o.upstream.callTool(name, args).finally(() => this.o.onUpstreamCall?.(name)), agent.priority ? 'priority' : 'normal');
       // Upstream sign-in help (terminal command, copying session.json) does not apply here: point at the add-on page.
-      result = haSignIn(result);
+      result = haSignIn(result, this.o.credentialsSaved?.() ?? false);
     } catch (e) {
       if (isCartChange(name)) this.o.auditLog(`[cart] ${who} tool=${name} ${describeArgs(args)} status=failed ms=${Date.now() - started}`);
       if (e instanceof QueueFullError) return errorResult('busy', e.message);
       return errorResult('upstream_unavailable', 'The Continente MCP did not answer');
     }
-    this.o.session.observe(result);
+    this.o.session.observe(result, name);
     if (isCartChange(name)) {
       const res = resultOf(result);
       this.o.auditLog(`[cart] ${who} tool=${name} ${describeArgs(args)} status=${safeId(res?.status ?? (result.isError ? 'error' : 'unknown'))}${res?.error?.code ? ` error=${safeId(res.error.code)}` : ''} ms=${Date.now() - started}`);
