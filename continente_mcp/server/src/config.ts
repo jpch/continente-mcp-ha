@@ -49,7 +49,7 @@ export function addonSlug(env: NodeJS.ProcessEnv, hostname: string | null): stri
 /**
  * Environment of the continentept-mcp server process. The sign-in (`login --show-browser`) gets the same
  * data directory, so it reads the same `credentials.env` and saves `session.json` for the same account:
- * continentept-mcp 0.15.0 only loads a session saved for the configured account, so a sign-in through the
+ * continentept-mcp (since 0.15.0) only loads a session saved for the configured account, so a sign-in through the
  * add-on page is always one the server then uses (no sign-in loop).
  */
 export const upstreamEnv = (continenteDir: string): Record<string, string> => ({ CONTINENTE_DATA_DIR: continenteDir });

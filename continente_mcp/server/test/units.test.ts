@@ -112,3 +112,15 @@ describe('shared folder', () => {
     expect(share.requests()).toEqual([]);
   });
 });
+
+describe('add-on option texts', () => {
+  // The allow_checkout text must not go stale on each upstream bump (1.0.4 still named 0.13.0).
+  for (const lang of ['en', 'pt']) {
+    it(`${lang}: allow_checkout names no continentept-mcp version`, () => {
+      const text = readFileSync(new URL(`../../translations/${lang}.yaml`, import.meta.url), 'utf8');
+      const line = text.split('\n').find(l => l.trim().startsWith('description:') && /allow_checkout|checkout|finalizar/i.test(l));
+      expect(line).toBeDefined();
+      expect(line).not.toMatch(/continentept-mcp\s+\d+\.\d+\.\d+/);
+    });
+  }
+});

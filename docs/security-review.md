@@ -40,3 +40,16 @@ Reviewed 2026-11-17 (PR #19, `continentept-mcp` 0.15.0) before release. Verdict:
 | 19 | Session hand-off (finding #8) | Removed. A leftover `/share/continente-mcp/import/` or `import.tmp/` is deleted without being read; a symlink is removed without being followed. Finding #8 is closed. | None | Resolved |
 | 20 | Supply chain | `continentept-mcp` 0.15.0 (npm integrity `sha512-KhlP8kkj…FyNg==`, published 2026-11-12). `npm audit` on its tree and on the add-on lockfile: 0 vulnerabilities. Installed by pinned version without an integrity pin in the Dockerfile and the CI contract job (unchanged from earlier releases). | Low | Accepted |
 | 21 | GitHub Actions | Only change: the contract job also runs `test/session-binding.test.ts` with `REQUIRE_UPSTREAM=1`. No new permissions, secrets or triggers. | None | OK |
+
+## 1.0.5 addendum
+
+Reviewed 2026-11-21 (`continentept-mcp` 0.15.0 → 0.16.1) before release. Verdict: **no Critical, High or Medium findings; release allowed.**
+
+| # | Area | Finding | Severity | Status |
+|---|---|---|---|---|
+| 20 | Upstream contract | No tool added or removed (17 upstream, 15 listed); every input and output schema is identical to 0.15.0 (`contract:check` against the installed 0.16.1, `--report`: added/removed/changed all empty). Only the `choose_products` description changed. The package's dependencies are unchanged and it calls the same hosts as 0.15.0 (continente.pt, login.continente.pt, the npm registry for the update notice). | None | OK |
+| 21 | Coupons and checkout | `list_coupons` and `set_cart_coupons` stay unlisted and refused for every token, with or without `allow_checkout`; the policy code is unchanged and its tests pass against 0.16.1. Upstream now also refuses cart and coupon writes (`Cart-AddProduct`, `Cart-UpdateQuantity`, remove endpoints, `Cart-ApplyCustomerBenefits`) from pages it opens for reading, a defence in depth this add-on gains. | None | OK |
+| 22 | Secrets in logs | 0.16.1 switches off Playwright's `pw:api`/`pw:protocol` debug namespaces, which could record the typed password and session cookies if `DEBUG` were set. This add-on never sets `DEBUG`; the fix removes the risk if a user does. | None | OK |
+| 23 | Sign-in | Email and password are typed only into an element whose document is on `login.continente.pt`, closing a theoretical mis-typing into another frame. The add-on's sign-in flow (`login --show-browser` on the noVNC display) is unchanged; the session-binding tests pass against the real 0.16.1. | None | OK |
+| 24 | Browser sandbox | 0.16.1 tries Chromium's sandbox first and falls back without it where the system can't provide it (expected in the add-on container, which runs as root), logging that once. Same isolation as 1.0.4 in that case. | Info | Accepted |
+| 25 | Supply chain | `npm audit`: server 0 vulnerabilities, installed continentept-mcp 0.16.1 0 vulnerabilities. The smoke client's lockfile had 2 Moderate (`hono`, `@hono/node-server`, transitive through the MCP SDK; the smoke client never starts a server); lockfile-only update to `hono` 4.13.19 and `@hono/node-server` 2.1.11, now 0. | Low | Fixed |

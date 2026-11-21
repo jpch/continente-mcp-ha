@@ -5,6 +5,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-11-21
+### Changed
+- `continentept-mcp` updated from 0.15.0 to 0.16.1 (reviewed). No tool was added or removed and every input and output
+  schema is unchanged; only the `choose_products` description changed. The coupon tools (`list_coupons`,
+  `set_cart_coupons`) stay hidden and refused for every token, with or without `allow_checkout`. Upstream fixes that
+  reach the add-on:
+  - The browser refuses cart and coupon writes from pages opened only to read products, orders or the cart. The cart
+    tools' own requests are unaffected.
+  - Chromium starts with its sandbox where the container allows it. Otherwise it starts without it and logs that once.
+  - Playwright debug output never records the password or session cookies.
+  - Sign-in types only into documents on the Continente login page.
+  - A replaced `session.json` is detected by its contents, not its modification time.
+  - A settled order read while the session was being replaced is no longer kept for the new session.
+### Fixed
+- The `allow_checkout` option text named continentept-mcp 0.13.0. It no longer names a version.
+
 ## [1.0.4] - 2026-11-17
 ### Changed
 - `continentept-mcp` updated from 0.13.0 to 0.15.0 (reviewed; 0.14.0 skipped). No tool was added or removed. Output
