@@ -113,11 +113,14 @@ describe('shared folder', () => {
   });
 });
 
-describe('add-on option texts', () => {
+// The add-on's translations sit outside server/, so the image build (which copies only server/) skips this;
+// the repository's contract job runs it.
+const translation = (lang: string) => new URL(`../../translations/${lang}.yaml`, import.meta.url);
+describe.skipIf(!existsSync(translation('en')))('add-on option texts', () => {
   // The allow_checkout text must not go stale on each upstream bump (1.0.4 still named 0.13.0).
   for (const lang of ['en', 'pt']) {
     it(`${lang}: allow_checkout names no continentept-mcp version`, () => {
-      const text = readFileSync(new URL(`../../translations/${lang}.yaml`, import.meta.url), 'utf8');
+      const text = readFileSync(translation(lang), 'utf8');
       const line = text.split('\n').find(l => l.trim().startsWith('description:') && /allow_checkout|checkout|finalizar/i.test(l));
       expect(line).toBeDefined();
       expect(line).not.toMatch(/continentept-mcp\s+\d+\.\d+\.\d+/);
