@@ -64,11 +64,13 @@ describe('admin API and ingress page', () => {
   it('health is public and has no secrets', async () => {
     const { app } = setup();
     const h = (await app.inject({ url: '/health', ...LAN })).json();
-    expect(Object.keys(h).sort()).toEqual(['addon_slug', 'allow_checkout', 'credentials_configured', 'ha_notification', 'queue_length', 'session_checked_at', 'session_keepalive', 'session_valid', 'signing_in', 'status', 'unattended_sign_in', 'upstream', 'version']);
-    // The keep-alive's next check time is only on the admin status.
-    expect(h.session_keepalive).toEqual({ enabled: false, state: 'off' });
-    expect(h.unattended_sign_in).toBe(true);
+    expect(Object.keys(h).sort()).toEqual(['addon_slug', 'allow_checkout', 'credentials_configured', 'ha_notification', 'queue_length', 'session_checked_at', 'session_keepalive', 'session_valid', 'signing_in', 'status', 'upstream', 'version']);
+    // Only what Cesto needs; unattended_sign_in and the keep-alive state are on the admin status.
+    expect(h.session_keepalive).toEqual({ enabled: false });
     expect(h.ha_notification).toBe(false);
+    const admin = (await app.inject({ url: '/api/admin/status', ...INGRESS_ADMIN })).json();
+    expect(admin.unattended_sign_in).toBe(true);
+    expect(admin.session_keepalive).toEqual({ enabled: false, state: 'off', next_at: null, checks: 0 });
   });
 
   it('GET /mcp is not allowed', async () => {

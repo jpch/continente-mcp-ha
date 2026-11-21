@@ -2,15 +2,27 @@ import { EventEmitter } from 'node:events';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
+import { childEnv } from './config.js';
 import { isCartChange } from './policy.js';
+
+export interface CallOptions {
+  /** MCP request timeout for this call (the SDK default is 60 s). */
+  timeoutMs?: number;
+}
 
 export interface Upstream {
   listTools(): Promise<Tool[]>;
-  callTool(name: string, args: Record<string, unknown>): Promise<CallToolResult>;
+  callTool(name: string, args: Record<string, unknown>, options?: CallOptions): Promise<CallToolResult>;
   close(): Promise<void>;
 }
 
-export interface StdioOptions { command: string; args?: string[]; env?: Record<string, string>; maxRestarts?: number }
+export interface StdioOptions {
+  command: string;
+  args?: string[];
+  /** Added to the allowlisted environment (`childEnv`): the child never gets the add-on's whole environment. */
+  env?: Record<string, string>;
+  maxRestarts?: number;
+}
 
 /** The upstream result envelope: `structuredContent.result` with a `status` and maybe an `error.code`. */
 export const resultOf = (r: CallToolResult): { status?: string; error?: { code?: string } } | undefined =>
@@ -25,24 +37,31 @@ export class StdioUpstream implements Upstream {
   private connecting?: Promise<Client>;
   private tools?: Tool[];
   private failures = 0;
+  /** Bumped by close(): a connection still opening when close() was called is closed as soon as it opens. */
+  private generation = 0;
 
   constructor(private readonly options: StdioOptions) {}
 
   private async connect(): Promise<Client> {
     if (this.client) return this.client;
     if (this.connecting) return this.connecting;
-    this.connecting = (async () => {
+    const generation = this.generation;
+    const connecting = (async () => {
       const transport = new StdioClientTransport({
-        command: this.options.command, args: this.options.args ?? [],
-        env: { ...(process.env as Record<string, string>), ...this.options.env }, stderr: 'inherit',
+        command: this.options.command, args: this.options.args ?? [], env: childEnv(this.options.env), stderr: 'inherit',
       });
       const client = new Client({ name: 'continente-mcp-ha', version: '1.0.0' });
       transport.onclose = () => { if (this.client === client) this.client = undefined; };
-      await client.connect(transport);
+      try { await client.connect(transport); } catch (e) { await client.close().catch(() => undefined); throw e; }
+      if (generation !== this.generation) {
+        await client.close().catch(() => undefined);
+        throw new Error('The upstream was closed while it was starting');
+      }
       this.client = client;
       return client;
-    })().finally(() => { this.connecting = undefined; });
-    return this.connecting;
+    })().finally(() => { if (this.connecting === connecting) this.connecting = undefined; });
+    this.connecting = connecting;
+    return connecting;
   }
 
   async listTools(): Promise<Tool[]> {
@@ -55,12 +74,12 @@ export class StdioUpstream implements Upstream {
     return tools;
   }
 
-  async callTool(name: string, args: Record<string, unknown>): Promise<CallToolResult> {
+  async callTool(name: string, args: Record<string, unknown>, options: CallOptions = {}): Promise<CallToolResult> {
     const max = this.options.maxRestarts ?? 3;
     for (;;) {
       try {
         const client = await this.connect();
-        const res = (await client.callTool({ name, arguments: args })) as CallToolResult;
+        const res = (await client.callTool({ name, arguments: args }, undefined, options.timeoutMs ? { timeout: options.timeoutMs } : undefined)) as CallToolResult;
         this.failures = 0;
         return res;
       } catch (error) {
@@ -70,7 +89,16 @@ export class StdioUpstream implements Upstream {
     }
   }
 
-  async close(): Promise<void> { const c = this.client; this.client = undefined; await c?.close().catch(() => undefined); }
+  async close(): Promise<void> {
+    this.generation++;
+    this.connecting = undefined;
+    const c = this.client;
+    this.client = undefined;
+    await c?.close().catch(() => undefined);
+  }
+
+  /** True while a child process is connected or starting (tests). */
+  get open(): boolean { return !!this.client || !!this.connecting; }
 }
 
 /**

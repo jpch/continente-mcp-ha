@@ -5,10 +5,11 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it, vi } from 'vitest';
-import { intOption, loadConfig, loginEnv, probeEnv, upstreamEnv } from '../src/config.js';
+import { childEnv, intOption, loadConfig, loginEnv, probeEnv, takeSupervisorToken, upstreamEnv } from '../src/config.js';
+import { LoginService } from '../src/login.js';
 import { CORE_API, HaSessionNotifier, NOTIFICATION_ID, SENSOR_ENTITY, addonLinks, expiredNotification } from '../src/ha.js';
 import { KEEPALIVE_MAX_HOURS, KEEPALIVE_MINUTES, SessionKeepAlive, type KeepAliveOptions } from '../src/keepalive.js';
-import { probeSession } from '../src/probe.js';
+import { mainProcess, probeSession, separateProcess } from '../src/probe.js';
 import { SerialQueue } from '../src/queue.js';
 import { haSignIn } from '../src/signin.js';
 import { SessionTracker, StdioUpstream, sessionEvidence, type Upstream } from '../src/upstream.js';
@@ -128,15 +129,22 @@ describe('session keep-alive scheduling', () => {
     expect(r.k.state).toBe('stopped_expired'); expect(r.timers).toHaveLength(0);
   });
 
-  it('tries again after the next interval when a check fails', async () => {
+  it('tries again one interval after a failed check, which does not count as a request', async () => {
     const r = rig();
     r.setValid(true);
+    r.k.touch();
+    const last = r.k.lastRequestAt;
     r.probe.mockRejectedValueOnce(new Error('x')).mockResolvedValueOnce(null);
     await r.advance(15 * MIN);
     expect(r.k.state).toBe('scheduled');
+    expect(r.k.lastRequestAt).toBe(last);
+    expect(r.k.nextAt).toBe(r.now + 15 * MIN);
     await r.advance(15 * MIN);
-    expect(r.k.state).toBe('scheduled');
+    expect(r.k.lastRequestAt).toBe(last);
     expect(r.probe).toHaveBeenCalledTimes(2);
+    await r.advance(15 * MIN);
+    expect(r.probe).toHaveBeenCalledTimes(3);
+    expect(r.k.lastRequestAt).toBe(r.now);
   });
 
   it('stops max_hours after the sign-in and starts again after a new sign-in', async () => {
@@ -162,12 +170,9 @@ describe('session keep-alive scheduling', () => {
     expect(r.k.state).toBe('stopped_max_hours');
   });
 
-  it('max_hours 0 means no limit', async () => {
-    const r = rig({ maxSessionMs: 0, signedInAt: () => 0 });
-    r.setValid(true);
-    await r.advance(48 * 60 * MIN);
-    expect(r.k.state).toBe('scheduled');
-    expect(r.probe.mock.calls.length).toBeGreaterThan(180);
+  it('has no "no limit" setting', () => {
+    expect(() => rig({ maxSessionMs: 0 })).toThrow(RangeError);
+    expect(() => rig({ maxSessionMs: -1 })).toThrow(RangeError);
   });
 
   it('waits while a sign-in on the add-on page is open', async () => {
@@ -225,31 +230,74 @@ describe('the keep-alive check never signs in', () => {
     expect(probeEnv('/d')).not.toHaveProperty('CONTINENTE_EMAIL');
   });
 
-  it('calls only get_cart, in a process without a password, and closes it', async () => {
+  it('separate process: calls only get_cart, without a password, and closes it', async () => {
     const d = dir(); const log = join(d, 'calls.jsonl');
     const ups: StdioUpstream[] = [];
-    const make = () => { const u = new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...probeEnv(d), FAKE_MCP_LOG: log }, maxRestarts: 0 }); ups.push(u); return u; };
+    const make = () => { const u = new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...probeEnv(d), FAKE_MCP_LOG: log }, maxRestarts: 0 }); ups.push(u); return separateProcess(u); };
     const seen: CallToolResult[] = [];
     expect(await probeSession(make, r => seen.push(r))).toBe(true);
     const calls = readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l) as { name: string; password: string });
     expect(calls).toEqual([expect.objectContaining({ name: 'get_cart', password: 'empty' })]);
     expect(seen).toHaveLength(1);
-    expect((ups[0] as unknown as { client?: unknown }).client).toBeUndefined();
+    expect(ups[0]!.open).toBe(false);
+  });
+
+  it('main process (unattended_sign_in off, so no password there either): the check uses it and leaves it running', async () => {
+    const d = dir(); const log = join(d, 'calls.jsonl');
+    const main = new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...upstreamEnv(d, false), FAKE_MCP_LOG: log } });
+    expect(await probeSession(() => mainProcess(main), () => undefined)).toBe(true);
+    expect(await probeSession(() => mainProcess(main), () => undefined)).toBe(true);
+    const calls = readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l) as { name: string; password: string; pid: number });
+    expect(calls.map(c => [c.name, c.password])).toEqual([['get_cart', 'empty'], ['get_cart', 'empty']]);
+    expect(new Set(calls.map(c => c.pid)).size).toBe(1);
+    expect(main.open).toBe(true);
+    await main.close();
   });
 
   it('reports an expired session as false', async () => {
     const d = dir();
-    const make = () => new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...probeEnv(d), FAKE_MCP_MODE: 'not_authenticated' }, maxRestarts: 0 });
+    const make = () => separateProcess(new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...probeEnv(d), FAKE_MCP_MODE: 'not_authenticated' }, maxRestarts: 0 }));
     expect(await probeSession(make, () => undefined)).toBe(false);
   });
 
-  it('gives up after the timeout and closes the process', async () => {
+  it('gives up after the timeout and closes the process (stub)', async () => {
     const close = vi.fn(async () => undefined);
     const hung: Upstream = { listTools: async () => [], callTool: () => new Promise(() => undefined), close };
-    expect(await probeSession(() => hung, () => undefined, 20)).toBeNull();
-    expect(close).toHaveBeenCalledOnce();
+    expect(await probeSession(() => separateProcess(hung), () => undefined, 20)).toBeNull();
+    expect(close).toHaveBeenCalled();
     const failing: Upstream = { listTools: async () => [], callTool: async () => { throw new Error('exit'); }, close };
-    expect(await probeSession(() => failing, () => undefined)).toBeNull();
+    expect(await probeSession(() => separateProcess(failing), () => undefined)).toBeNull();
+    // A hung main process is restarted (closed; the next call starts a new one).
+    const mainClose = vi.fn(async () => undefined);
+    expect(await probeSession(() => mainProcess({ ...hung, close: mainClose }), () => undefined, 20)).toBeNull();
+    expect(mainClose).toHaveBeenCalledOnce();
+  });
+
+  it('passes the request timeout to the MCP SDK, never above the check timeout', async () => {
+    const seen: (number | undefined)[] = [];
+    const u: Upstream = { listTools: async () => [], close: async () => undefined, callTool: async (_n, _a, o) => { seen.push(o?.timeoutMs); return ok(); } };
+    await probeSession(() => separateProcess(u), () => undefined);
+    await probeSession(() => separateProcess(u), () => undefined, 1_000);
+    expect(seen).toEqual([55_000, 1_000]);
+  });
+
+  it('a real hung process: the SDK request times out and the process is closed', async () => {
+    const d = dir();
+    const u = new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...probeEnv(d), FAKE_MCP_MODE: 'hang' }, maxRestarts: 0 });
+    const t0 = Date.now();
+    expect(await probeSession(() => separateProcess(u), () => undefined, 3_000, 300)).toBeNull();
+    expect(Date.now() - t0).toBeLessThan(2_500);
+    expect(u.open).toBe(false);
+  });
+
+  it('closing while the process is still starting closes it as soon as it is up', async () => {
+    const d = dir(); const log = join(d, 'calls.jsonl');
+    const u = new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...probeEnv(d), FAKE_MCP_LOG: log }, maxRestarts: 0 });
+    const call = u.callTool('get_cart', {});
+    await u.close();
+    await expect(call).rejects.toThrow();
+    expect(u.open).toBe(false);
+    expect(existsSync(log)).toBe(false);
   });
 
   // With the pinned continentept-mcp installed (CI contract job): its own settings loader sees no password.
@@ -294,10 +342,13 @@ describe('unattended_sign_in option', () => {
     expect(opts({})).toMatchObject({ sessionKeepalive: false, sessionKeepaliveMinutes: 15, sessionKeepaliveMaxHours: 6, unattendedSignIn: true, sessionSensor: false });
   });
   it('reads the options and rejects out-of-range values', () => {
-    expect(opts({ session_keepalive: true, session_keepalive_minutes: 10, session_keepalive_max_hours: 0, unattended_sign_in: false, session_sensor: true }))
-      .toMatchObject({ sessionKeepalive: true, sessionKeepaliveMinutes: 10, sessionKeepaliveMaxHours: 0, unattendedSignIn: false, sessionSensor: true });
+    expect(opts({ session_keepalive: true, session_keepalive_minutes: 10, session_keepalive_max_hours: 12, unattended_sign_in: false, session_sensor: true }))
+      .toMatchObject({ sessionKeepalive: true, sessionKeepaliveMinutes: 10, sessionKeepaliveMaxHours: 12, unattendedSignIn: false, sessionSensor: true });
+    expect(opts({ session_keepalive_max_hours: 0 }).sessionKeepaliveMaxHours).toBe(6);
     for (const v of [9, 46, 15.5, '15', null]) expect(intOption(v, KEEPALIVE_MINUTES)).toBe(15);
-    for (const v of [-1, 73, 2.5]) expect(intOption(v, KEEPALIVE_MAX_HOURS)).toBe(6);
+    for (const v of [0, -1, 13, 72, 2.5]) expect(intOption(v, KEEPALIVE_MAX_HOURS)).toBe(6);
+    expect(intOption(1, KEEPALIVE_MAX_HOURS)).toBe(1);
+    expect(intOption(12, KEEPALIVE_MAX_HOURS)).toBe(12);
     expect(opts({ unattended_sign_in: 'false' }).unattendedSignIn).toBe(true);
   });
   it('with no password in the server, sign-in errors ask to sign in on the page, not to save the account again', () => {
@@ -317,11 +368,17 @@ describe('Home Assistant notification and sensor', () => {
   function ha(sensor = false, status = 200) {
     const calls: { url: string; init: RequestInit }[] = [];
     let code = status;
-    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => { calls.push({ url: String(url), init: init! }); return new Response('{}', { status: code }); }) as unknown as typeof fetch;
+    let route: ((path: string, method: string) => number | undefined) | undefined;
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init! });
+      const status = route?.(String(url).replace(CORE_API, ''), init?.method ?? 'GET') ?? code;
+      if (status === 0) throw new TypeError('fetch failed');
+      return new Response(status === 204 ? null : '{}', { status });
+    }) as unknown as typeof fetch;
     const timers: (() => void)[] = [];
     const log: string[] = [];
     const n = new HaSessionNotifier({ token: TOKEN, slug: () => 'abc123_continente_mcp', sensor, fetchImpl, log: l => log.push(l), setTimer: fn => { timers.push(fn); return timers.length; }, clearTimer: () => undefined });
-    return { n, calls, timers, log, setStatus: (c: number) => { code = c; } };
+    return { n, calls, timers, log, setStatus: (c: number) => { code = c; }, setRoute: (r: typeof route) => { route = r; } };
   }
   const paths = (c: { url: string }[]) => c.map(x => x.url.replace(CORE_API, ''));
 
@@ -384,20 +441,152 @@ describe('Home Assistant notification and sensor', () => {
     expect(states[0].attributes).toMatchObject({ device_class: 'connectivity' });
   });
 
-  it('publishes the sensor again on refresh (Home Assistant restarts drop it) without touching the notification', async () => {
+  it('reports itself not working after 3 failed calls in a row, and working again after one success', async () => {
+    const h = ha(false, 500);
+    expect(h.n.working).toBe(true);                 // nothing needed yet
+    await h.n.update(false);
+    expect(h.n.working).toBe(true);                 // 1 failure
+    const next = async () => { h.timers.shift()!(); await vi.waitFor(() => expect(h.timers.length).toBe(1)); };
+    await next();
+    expect(h.n.working).toBe(true);                 // 2
+    await next();
+    expect(h.n.working).toBe(false);                // 3
+    h.setStatus(200);
+    h.timers.shift()!(); await vi.waitFor(() => expect(h.n.working).toBe(true));
+  });
+
+  it('after a Home Assistant restart (API down, then up), shows the notification again while the session is expired', async () => {
+    const h = ha(false);
+    await h.n.update(false);
+    expect(h.n.watching).toBe(true);
+    await h.n.watch();                               // HA up and running: nothing to do
+    expect(paths(h.calls)).toEqual(['/services/persistent_notification/create', '/']);
+    h.setStatus(502);                                // Supervisor proxy while Core restarts
+    await h.n.watch();
+    h.setStatus(200);
+    await h.n.watch();
+    expect(paths(h.calls).filter(p => p.endsWith('/create'))).toHaveLength(2);
+    expect(h.log).toContain('[ha] Home Assistant restarted: showing the session state again');
+  });
+
+  it('a notification dismissed by hand while Home Assistant kept running does not come back', async () => {
+    const h = ha(false);
+    await h.n.update(false);
+    for (let i = 0; i < 5; i++) await h.n.watch();   // the user dismissed it; HA stays up
+    expect(paths(h.calls).filter(p => p.endsWith('/create'))).toHaveLength(1);
+    // Once the session is valid, there is nothing to watch without the sensor.
+    await h.n.update(true);
+    const n = h.calls.length;
+    await h.n.watch();
+    expect(h.calls).toHaveLength(n);
+  });
+
+  it('with the sensor on, a missing sensor (404) means Home Assistant restarted: sensor and notification come back', async () => {
     const h = ha(true);
     await h.n.update(false);
-    const before = h.calls.length;
-    await h.n.refreshSensor();
-    expect(paths(h.calls.slice(before))).toEqual([`/states/${SENSOR_ENTITY}`]);
-    const off = ha(false);
-    await off.n.refreshSensor();
-    expect(off.calls).toHaveLength(0);
+    await h.n.watch();
+    expect(paths(h.calls).filter(p => p.endsWith('/create'))).toHaveLength(1);
+    h.setRoute((path, method) => (method === 'GET' && path === `/states/${SENSOR_ENTITY}` ? 404 : undefined));
+    await h.n.watch();
+    h.setRoute(undefined);
+    expect(paths(h.calls).filter(p => p.endsWith('/create'))).toHaveLength(2);
+    expect(h.calls.filter(c => c.init.method === 'POST' && c.url.endsWith(`/states/${SENSOR_ENTITY}`))).toHaveLength(2);
+    // While valid, only the sensor is restored after a restart; no notification.
+    await h.n.update(true);
+    h.setRoute((path, method) => (method === 'GET' && path === `/states/${SENSOR_ENTITY}` ? 404 : undefined));
+    await h.n.watch();
+    expect(paths(h.calls).filter(p => p.endsWith('/create'))).toHaveLength(2);
+    expect(JSON.parse(String(h.calls.at(-1)!.init.body)).state).toBe('on');
+  });
+
+  it('a network error during watch counts as Home Assistant down', async () => {
+    const h = ha(false);
+    await h.n.update(false);
+    h.setRoute(() => 0);
+    await h.n.watch();
+    h.setRoute(undefined);
+    await h.n.watch();
+    expect(paths(h.calls).filter(p => p.endsWith('/create'))).toHaveLength(2);
   });
 
   it('links only to relative Home Assistant paths (no host names)', () => {
     expect(addonLinks(null)).toEqual({ page: '/hassio/dashboard', info: '/hassio/dashboard' });
     expect(addonLinks('../evil')).toEqual({ page: '/hassio/dashboard', info: '/hassio/dashboard' });
     expect(expiredNotification('a1_continente_mcp').message).not.toMatch(/https?:\/\//);
+  });
+});
+
+describe('child processes never see the Supervisor token', () => {
+  const SECRET = 'supervisor-secret-for-test';
+  it('takeSupervisorToken reads it once and removes it (and HASSIO_TOKEN) from the environment', () => {
+    const env: NodeJS.ProcessEnv = { SUPERVISOR_TOKEN: SECRET, HASSIO_TOKEN: SECRET, PATH: '/bin' };
+    expect(takeSupervisorToken(env)).toBe(SECRET);
+    expect(env).toEqual({ PATH: '/bin' });
+    expect(takeSupervisorToken({})).toBeUndefined();
+  });
+
+  it('childEnv keeps only the allowlist', () => {
+    const env = { PATH: '/bin', HOME: '/root', LANG: 'C.UTF-8', LC_ALL: 'C', TZ: 'UTC', NODE_ENV: 'production', DISPLAY: ':1',
+      PLAYWRIGHT_BROWSERS_PATH: '/opt/pw', CONTINENTE_DATA_DIR: '/d', XDG_RUNTIME_DIR: '/run', TMPDIR: '/tmp',
+      SUPERVISOR_TOKEN: SECRET, HASSIO_TOKEN: SECRET, OPTIONS_PATH: '/data/options.json', AWS_SECRET: 'x', NODE_OPTIONS: '--inspect' };
+    const out = childEnv({ EXTRA: '1' }, env);
+    expect(Object.keys(out).sort()).toEqual(['CONTINENTE_DATA_DIR', 'DISPLAY', 'EXTRA', 'HOME', 'LANG', 'LC_ALL', 'NODE_ENV', 'PATH', 'PLAYWRIGHT_BROWSERS_PATH', 'TMPDIR', 'TZ', 'XDG_RUNTIME_DIR']);
+  });
+
+  it('continentept-mcp (main and keep-alive processes) and the sign-in processes get no token', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'cmcp-env-'));
+    process.env.SUPERVISOR_TOKEN = SECRET;
+    process.env.HASSIO_TOKEN = SECRET;
+    try {
+      const log = join(d, 'calls.jsonl');
+      for (const env of [upstreamEnv(d, true), upstreamEnv(d, false), probeEnv(d)]) {
+        const u = new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...env, FAKE_MCP_LOG: log } });
+        await u.callTool('get_cart', {});
+        await u.close();
+      }
+      const calls = readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l) as { env: string[] });
+      expect(calls).toHaveLength(3);
+      for (const c of calls) { expect(c.env).not.toContain('SUPERVISOR_TOKEN'); expect(c.env).not.toContain('HASSIO_TOKEN'); expect(c.env).toContain('CONTINENTE_DATA_DIR'); }
+
+      // LoginService: display, websockify and the sign-in command, each dumping its environment.
+      const dump = (name: string) => ({ command: process.execPath, args: ['-e', `require('fs').writeFileSync(${JSON.stringify(join(d, name))}, JSON.stringify(process.env)); setTimeout(() => {}, ${name === 'login' ? 0 : 5000})`] });
+      const login = new LoginService({ display: dump('display'), websockify: dump('ws'), login: dump('login'), env: loginEnv(d, ':99'), displayDelayMs: 10 });
+      const done = new Promise<void>(r => login.once('failed', () => r()).once('success', () => r()));
+      login.start();
+      await done;
+      for (const name of ['display', 'ws', 'login']) {
+        await vi.waitFor(() => expect(existsSync(join(d, name))).toBe(true));
+        const env = JSON.parse(readFileSync(join(d, name), 'utf8')) as Record<string, string>;
+        expect(env.SUPERVISOR_TOKEN, name).toBeUndefined();
+        expect(env.HASSIO_TOKEN, name).toBeUndefined();
+        expect(env.DISPLAY, name).toBe(':99');
+        expect(env.CONTINENTE_DATA_DIR, name).toBe(d);
+        expect(env.PATH, name).toBeTruthy();
+      }
+      expect(JSON.stringify(readFileSync(log, 'utf8'))).not.toContain(SECRET);
+    } finally {
+      delete process.env.SUPERVISOR_TOKEN;
+      delete process.env.HASSIO_TOKEN;
+    }
+  });
+});
+
+describe('what restarts the keep-alive wait', () => {
+  it('a signed-in tool that returned a result does; a transport error does not', async () => {
+    const { Gateway } = await import('../src/gateway.js');
+    const { ToolPolicy } = await import('../src/policy.js');
+    const { REVIEWED } = await import('./helpers.js');
+    let fail = false;
+    const upstream: Upstream = { listTools: async () => [], close: async () => undefined,
+      callTool: async n => { if (fail) throw new Error('upstream exited'); return ok(n); } };
+    const touched: string[] = [];
+    const g = new Gateway({ upstream, policy: new ToolPolicy(REVIEWED, () => false), queue: new SerialQueue(5), session: new SessionTracker(),
+      auditLog: () => undefined, version: 't', onUpstreamCall: t => touched.push(t) });
+    const agent = { id: 'a', name: 'a', priority: false } as never;
+    await g.call(agent, 'get_cart', {});
+    fail = true;
+    const r = await g.call(agent, 'get_cart', {});
+    expect(r.isError).toBe(true);
+    expect(touched).toEqual(['get_cart']);
   });
 });

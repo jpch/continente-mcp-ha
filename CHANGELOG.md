@@ -8,19 +8,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [1.0.6] - 2026-11-21
 ### Added
 - Session keep-alive, option `session_keepalive` (off by default). While the session is valid, one read-only
-  `get_cart` after `session_keepalive_minutes` (10–45, default 15, ±20% jitter) without a signed-in Continente request,
-  counted from the last one. It runs in the queue's new background lane, after every waiting agent call, in a
-  short-lived `continentept-mcp` process without the password, so it never signs in. It stops at the first
-  `not_authenticated` and `session_keepalive_max_hours` (0–72, default 6, 0 = no limit) after the sign-in.
-- Option `unattended_sign_in` (default on, the behaviour so far). Off: the server process gets no password, so
-  `continentept-mcp` never signs in on its own; sign-in happens only on the add-on page.
+  `get_cart` after `session_keepalive_minutes` (10–45, default 15, ±20% jitter) without a signed-in Continente request
+  that returned a result. It runs in the queue's new background lane, after every waiting agent call, and never signs
+  in: with `unattended_sign_in` off it goes through the main `continentept-mcp` process (which then has no password);
+  with it on, through a short-lived process without the password. It stops at the first `not_authenticated` and
+  `session_keepalive_max_hours` (1–12, default 6) after the sign-in. A check is abandoned after 60 s.
+- Option `unattended_sign_in` (default on). Off: the server process gets no password, so `continentept-mcp` never signs
+  in on its own; sign-in happens only on the add-on page. Recommended off together with `session_keepalive`.
 - Home Assistant persistent notification (pt-PT) as soon as the session expires, with links to the add-on page and its
-  options; dismissed when the session is valid again. Optional `binary_sensor.continente_mcp_session` (option
-  `session_sensor`, published again every 5 minutes). The add-on now has `homeassistant_api: true`.
-- `/health` reports `unattended_sign_in`, `ha_notification` and the keep-alive state.
+  options; dismissed when the session is valid again, shown again after a Home Assistant restart while the session is
+  still expired. Optional `binary_sensor.continente_mcp_session` (option `session_sensor`). The add-on now has
+  `homeassistant_api: true`.
+- `/health` reports `session_keepalive.enabled` and `ha_notification` (false after 3 failed Home Assistant calls in a
+  row); the admin status also reports `unattended_sign_in` and the keep-alive state.
+- `DOCS.md` for the add-on's Documentation tab.
 ### Changed
 - The session counts as valid only after a tool that always makes a signed-in request (cart tools, `list_orders`,
   `list_frequently_bought_products`). A search or a cached answer no longer marks a signed-out session as valid.
+### Security
+- The Supervisor token is removed from the environment at start, and every child process (continentept-mcp, the
+  sign-in, Xvnc, websockify, Chromium) gets an allowlisted environment.
 
 ## [1.0.5] - 2026-11-21
 ### Changed

@@ -10,10 +10,10 @@ configuration:
     description: "10 to 45, default 15. Counted from the last Continente request, with ±20% random variation. Continente ends an idle session after about 30 minutes."
   session_keepalive_max_hours:
     name: Keep-alive limit (hours)
-    description: "0 to 72, default 6. The keep-alive stops this many hours after the sign-in (Continente is expected to end a session after about 6 hours anyway). 0: no limit."
+    description: "1 to 12, default 6. The keep-alive stops this many hours after the sign-in (Continente is expected to end a session after about 6 hours anyway)."
   unattended_sign_in:
-    name: Sign in again without you
-    description: "On (default, as before): when the session has expired, continentept-mcp signs in again on its own in a hidden browser with the saved password. That fails when Continente asks for \"Não sou um robô\". Off: it never signs in on its own; you sign in on the add-on page when the notification asks."
+    name: Sign in again automatically
+    description: "On (default): when the session has expired, continentept-mcp signs in again on its own in a hidden browser with the saved password. That fails when Continente asks for \"Não sou um robô\". Off (recommended with the keep-alive): it never signs in on its own; you sign in on the add-on page when the notification asks."
   session_sensor:
     name: Session sensor
     description: "Off (default). On: publishes binary_sensor.continente_mcp_session (on while the Continente session is valid). The session-expired notification is always shown."

@@ -48,20 +48,27 @@ header `X-Continente-MCP-Token: cmcp_…`: see [docs/remote-access.md](docs/remo
 
 The server is stateless (no MCP session id) and answers with JSON. `GET /health` (no secrets) reports the version,
 the add-on slug, whether the Continente session is valid, whether a sign-in is open, the queue length,
-`allow_checkout`, `unattended_sign_in` and the keep-alive state.
+`allow_checkout`, whether the keep-alive is on and whether the add-on's Home Assistant notification works.
 
 ## Continente session
 
 Continente ends a session after about 30 minutes without requests (and probably after about 6 hours in any case).
 
+**Recommended:** `session_keepalive: true` together with `unattended_sign_in: false`.
+
 - **Keep-alive** (`session_keepalive`, off by default): while the session is valid, the add-on sends one read-only
-  `get_cart` when no Continente request was made for `session_keepalive_minutes` (default 15, ±20% random), counted
-  from the last request. It runs only when no agent call is waiting, in a separate `continentept-mcp` process without
-  the password, so it **never signs in**. It stops at the first expired result and `session_keepalive_max_hours`
-  (default 6, 0 = no limit) after the sign-in.
+  `get_cart` when no signed-in Continente request returned a result for `session_keepalive_minutes` (default 15,
+  ±20% random). It runs only when no agent call is waiting. It stops at the first expired result and
+  `session_keepalive_max_hours` (1–12, default 6) after the sign-in. It **never signs in**:
+  - with `unattended_sign_in: false`, the check goes through the same `continentept-mcp` process agents use, which then
+    has no password, so it refreshes exactly the browser session agents use;
+  - with `unattended_sign_in: true`, the check runs in a separate, short-lived `continentept-mcp` process without the
+    password (same saved session, its own browser), so a check can never start an unattended sign-in.
+  A check that gets no answer within 60 s is abandoned (the process is closed) and tried again one interval later.
 - **Notification:** when the session expires, Home Assistant shows a persistent notification with a link to the
-  add-on page. It goes away by itself once the session is valid again. With `session_sensor` on, the add-on also
-  publishes `binary_sensor.continente_mcp_session`.
+  add-on page. It goes away by itself once the session is valid again, and is shown again after a Home Assistant
+  restart while the session is still expired. With `session_sensor` on, the add-on also publishes
+  `binary_sensor.continente_mcp_session`.
 - **Unattended sign-in** (`unattended_sign_in`, on by default): `continentept-mcp` may sign in again on its own in a
   hidden browser with the saved password. Continente's "Não sou um robô" check stops it, and it is never answered
   automatically. Turn it off to sign in only on the add-on page.
@@ -87,7 +94,7 @@ The add-on maps `/share` and uses `/share/continente-mcp`:
 | `allow_checkout` | `false` | Expose checkout/payment-like tools, if a reviewed `continentept-mcp` version ever offers one. |
 | `session_keepalive` | `false` | Keep the Continente session alive with a read-only cart check (see above). |
 | `session_keepalive_minutes` | `15` | 10–45 minutes without requests before a check, ±20%. |
-| `session_keepalive_max_hours` | `6` | Stop the keep-alive this many hours after the sign-in; `0` = no limit. |
+| `session_keepalive_max_hours` | `6` | 1–12: stop the keep-alive this many hours after the sign-in. |
 | `unattended_sign_in` | `true` | Let `continentept-mcp` sign in again on its own with the saved password. |
 | `session_sensor` | `false` | Publish `binary_sensor.continente_mcp_session`. |
 | `log_level` | `info` | `debug`, `info`, `warning` or `error`. |
@@ -97,6 +104,7 @@ The add-on maps `/share` and uses `/share/continente-mcp`:
 - Tokens are random 256-bit values; only their SHA-256 hashes are stored (`/data/tokens.json`, mode 0600).
 - The page and admin API answer only through Home Assistant ingress, for Home Assistant administrators.
 - The add-on uses the Home Assistant Core API (`homeassistant_api`) only for the session notification and sensor.
+  The Supervisor token is removed from the environment at start; child processes get an allowlisted environment.
 - The Continente password is write-only; tokens, passwords and cookies are never logged.
 - Report vulnerabilities privately: see [SECURITY.md](SECURITY.md) and the
   [security review](docs/security-review.md).

@@ -11,7 +11,7 @@ export interface Config {
   sessionKeepalive: boolean;
   /** Option `session_keepalive_minutes`: 10-45, default 15. */
   sessionKeepaliveMinutes: number;
-  /** Option `session_keepalive_max_hours`: 0-72 (0 = no limit), default 6. */
+  /** Option `session_keepalive_max_hours`: 1-12, default 6 (no "no limit" setting). */
   sessionKeepaliveMaxHours: number;
   /**
    * Option `unattended_sign_in` (default on, as before 1.0.6): continentept-mcp may sign in again on its own, in a
@@ -55,6 +55,29 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     addonSlug: addonSlug(env, hostname),
     hostname,
   };
+}
+
+/**
+ * Environment of every child process (continentept-mcp, the keep-alive check, the sign-in, Xvnc, websockify and
+ * through them Chromium): only what they need. Everything else the add-on has, above all SUPERVISOR_TOKEN, stays out.
+ */
+const CHILD_ENV_NAMES = new Set(['PATH', 'HOME', 'LANG', 'LANGUAGE', 'TZ', 'TMPDIR', 'NODE_ENV', 'DISPLAY']);
+const CHILD_ENV_PREFIXES = ['LC_', 'PLAYWRIGHT_', 'CONTINENTE_', 'XDG_'];
+export function childEnv(extra: Record<string, string> = {}, env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    if (v !== undefined && (CHILD_ENV_NAMES.has(k) || CHILD_ENV_PREFIXES.some(p => k.startsWith(p)))) out[k] = v;
+  }
+  return { ...out, ...extra };
+}
+
+/** Reads the Supervisor token once and removes it from this process's environment, before any child is started. */
+export function takeSupervisorToken(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const token = env.SUPERVISOR_TOKEN;
+  delete env.SUPERVISOR_TOKEN;
+  // Older Supervisor versions also set HASSIO_TOKEN with the same value.
+  delete env.HASSIO_TOKEN;
+  return token || undefined;
 }
 
 /** An integer option inside its range; anything else (missing, out of range, not an integer) is the default. */

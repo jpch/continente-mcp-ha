@@ -30,7 +30,7 @@ export interface GatewayOptions {
   auditLog: (line: string) => void;
   version: string;
   callsPerMinute?: number;
-  /** Called after every upstream tool call that went out, with its name (the keep-alive counts from the last one). */
+  /** Called after every upstream tool call that returned a result (not on transport errors), with its name. */
   onUpstreamCall?: (tool: string) => void;
   /** Whether credentials are saved on the add-on page (with `unattended_sign_in` off the server sees no password). */
   credentialsSaved?: () => boolean;
@@ -70,7 +70,7 @@ export class Gateway {
     const started = Date.now();
     let result: CallToolResult;
     try {
-      result = await this.o.queue.run(() => this.o.upstream.callTool(name, args).finally(() => this.o.onUpstreamCall?.(name)), agent.priority ? 'priority' : 'normal');
+      result = await this.o.queue.run(() => this.o.upstream.callTool(name, args).then(r => { this.o.onUpstreamCall?.(name); return r; }), agent.priority ? 'priority' : 'normal');
       // Upstream sign-in help (terminal command, copying session.json) does not apply here: point at the add-on page.
       result = haSignIn(result, this.o.credentialsSaved?.() ?? false);
     } catch (e) {

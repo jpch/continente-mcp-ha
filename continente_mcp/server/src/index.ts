@@ -1,19 +1,23 @@
 import { mkdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildApp } from './app.js';
-import { LOGIN_ARGS, loadConfig, loginEnv, probeEnv, upstreamEnv } from './config.js';
+import { LOGIN_ARGS, loadConfig, loginEnv, probeEnv, takeSupervisorToken, upstreamEnv } from './config.js';
 import { CredentialsStore } from './credentials.js';
 import { Gateway } from './gateway.js';
 import { HaSessionNotifier } from './ha.js';
 import { SessionKeepAlive } from './keepalive.js';
 import { LoginService } from './login.js';
-import { probeSession } from './probe.js';
+import { mainProcess, probeSession, separateProcess } from './probe.js';
 import { ToolPolicy } from './policy.js';
 import { SerialQueue } from './queue.js';
 import { ShareDir } from './share.js';
 import { TokenStore } from './tokens.js';
 import { SIGNED_IN_TOOLS, SessionTracker, StdioUpstream } from './upstream.js';
 
+// First of all: the Supervisor token is read once and removed from the environment, so no child process
+// (continentept-mcp, the keep-alive check, the sign-in, Xvnc, websockify, Chromium) can inherit it. Children get an
+// allowlisted environment anyway (childEnv in config.ts).
+const supervisorToken = takeSupervisorToken();
 const config = loadConfig();
 mkdirSync(config.dataDir, { recursive: true });
 const pkg = (p: string) => JSON.parse(readFileSync(p, 'utf8')) as { version: string; tools?: { name: string }[] };
@@ -34,7 +38,7 @@ const credentials = new CredentialsStore(config.dataDir);
 let keepAlive: SessionKeepAlive | undefined;
 const gateway = new Gateway({
   upstream, policy, queue, session, auditLog: log, version,
-  // Only requests that surely reach Continente with the session restart the keep-alive wait.
+  // Only results of requests that surely reach Continente with the session restart the keep-alive wait.
   onUpstreamCall: tool => { if (SIGNED_IN_TOOLS.has(tool)) keepAlive?.touch(); }, credentialsSaved: () => credentials.status().configured,
 });
 const tokens = new TokenStore(join(config.dataDir, 'tokens.json'));
@@ -58,7 +62,8 @@ const checkSession = (): Promise<boolean | null> => {
   if (inFlight) return inFlight;
   if (Date.now() - lastCheck < 60_000) return Promise.resolve(session.valid);
   inFlight = queue.run(async () => {
-    try { session.observe(await upstream.callTool('get_cart', {}), 'get_cart'); } finally { keepAlive?.touch(); }
+    session.observe(await upstream.callTool('get_cart', {}), 'get_cart');
+    keepAlive?.touch();
     return session.valid;
   }, 'normal')
     .catch(() => session.valid)
@@ -78,17 +83,22 @@ keepAlive = new SessionKeepAlive({
   sessionValid: () => session.valid,
   signedInAt,
   signingIn: () => login.active,
+  // unattended_sign_in off: the main process has no password, so the check goes through it and refreshes exactly
+  // the browser session agents use. On: a separate process without a password, so the check itself can never
+  // trigger the main process's unattended sign-in.
   probe: () => queue.run(() => probeSession(
-    () => new StdioUpstream({ command: mcpCommand, env: probeEnv(continenteDir), maxRestarts: 0 }),
+    () => config.unattendedSignIn
+      ? separateProcess(new StdioUpstream({ command: mcpCommand, env: probeEnv(continenteDir), maxRestarts: 0 }))
+      : mainProcess(upstream),
     r => session.observe(r, 'get_cart'),
   ), 'background'),
   log,
 });
 
 // The session-expired notification (and the optional binary_sensor) in Home Assistant.
-const supervisorToken = process.env.SUPERVISOR_TOKEN;
 const ha = supervisorToken ? new HaSessionNotifier({ token: supervisorToken, slug: () => config.addonSlug, sensor: config.sessionSensor, log }) : undefined;
-if (ha && config.sessionSensor) setInterval(() => { void ha.refreshSensor(); }, 300_000).unref();
+// Home Assistant restart check (only while there is something to show again).
+if (ha) setInterval(() => { void ha.watch(); }, 30_000).unref();
 
 session.on('session', (v: boolean | null) => {
   log(`[session] valid=${v}`);
@@ -109,11 +119,11 @@ setInterval(pollShare, 5_000).unref();
 
 const app = buildApp({
   config, version, upstreamVersion, tokens, gateway, queue, session, credentials, login, share, checkSession, log,
-  onCredentialsChanged: restartUpstream, vncPort: WS_PORT, keepAlive, haNotification: !!ha,
+  onCredentialsChanged: restartUpstream, vncPort: WS_PORT, keepAlive, haNotification: () => ha?.working ?? false,
 });
 await app.listen({ host: '0.0.0.0', port: config.port });
 log(`[continente-mcp] MCP on :${config.port}/mcp (continentept-mcp ${upstreamVersion}, allow_checkout=${config.allowCheckout}, ${tokens.list().length} agent tokens)`);
-log(`[continente-mcp] session_keepalive=${config.sessionKeepalive}${config.sessionKeepalive ? ` every ${config.sessionKeepaliveMinutes} min ±20%, max ${config.sessionKeepaliveMaxHours || 'no limit'} h` : ''}, unattended_sign_in=${config.unattendedSignIn}, ha_notification=${!!ha}, session_sensor=${config.sessionSensor && !!ha}`);
+log(`[continente-mcp] session_keepalive=${config.sessionKeepalive}${config.sessionKeepalive ? ` every ${config.sessionKeepaliveMinutes} min ±20%, max ${config.sessionKeepaliveMaxHours} h, check in the ${config.unattendedSignIn ? 'separate' : 'main'} process` : ''}, unattended_sign_in=${config.unattendedSignIn}, ha_notification=${!!ha}, session_sensor=${config.sessionSensor && !!ha}`);
 void checkSession();
 
 const shutdown = async () => { keepAlive?.stop(); login.cancel(); await app.close(); await upstream.close(); process.exit(0); };

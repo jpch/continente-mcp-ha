@@ -7,10 +7,14 @@
  * keep-alive itself, starts the wait again, so the gap between two requests never exceeds the interval plus jitter.
  *
  * - The check runs in the queue's background lane: it never goes before a waiting agent call and never interrupts one.
- * - The check can never sign in (see `probeEnv` in config.ts: it runs in a separate upstream process with no password).
+ * - The check can never sign in: it runs in a continentept-mcp process without a password (probe.ts): the main one
+ *   when `unattended_sign_in` is off (it then has none), otherwise a separate short-lived one (`probeEnv`).
  * - It stops at the first `not_authenticated` result and does not try again until the session is valid again
  *   (a sign-in on the add-on page, or an agent call that finds a valid session).
- * - It stops `session_keepalive_max_hours` after the sign-in (the `session.json` save time); 0 means no limit.
+ * - It stops `session_keepalive_max_hours` (1-12) after the sign-in (the `session.json` save time). There is no
+ *   "no limit" setting.
+ * - Only a result counts as a request: a check that failed (timeout, process error) is tried again one interval
+ *   later, counted from the failure, without pretending the session was refreshed.
  */
 export type KeepAliveState = 'off' | 'waiting_for_session' | 'scheduled' | 'checking' | 'stopped_expired' | 'stopped_max_hours';
 
@@ -20,7 +24,7 @@ export interface KeepAliveOptions {
   intervalMs: number;
   /** Fraction of the interval used as jitter in both directions (default 0.2). */
   jitter?: number;
-  /** Stop this long after the sign-in; 0 = no limit. */
+  /** Stop this long after the sign-in (must be > 0). */
   maxSessionMs: number;
   /** One read-only check that never signs in: true signed in, false expired, null unknown (error, timeout). */
   probe: () => Promise<boolean | null>;
@@ -37,7 +41,7 @@ export interface KeepAliveOptions {
 }
 
 export const KEEPALIVE_MINUTES = { min: 10, max: 45, default: 15 } as const;
-export const KEEPALIVE_MAX_HOURS = { min: 0, max: 72, default: 6 } as const;
+export const KEEPALIVE_MAX_HOURS = { min: 1, max: 12, default: 6 } as const;
 
 export class SessionKeepAlive {
   state: KeepAliveState;
@@ -50,6 +54,7 @@ export class SessionKeepAlive {
   private stopped = false;
 
   constructor(private readonly o: KeepAliveOptions) {
+    if (!(o.maxSessionMs > 0)) throw new RangeError('maxSessionMs must be positive');
     this.state = o.enabled ? 'waiting_for_session' : 'off';
   }
 
@@ -62,7 +67,7 @@ export class SessionKeepAlive {
     return Math.round(this.o.intervalMs * (1 + j * (2 * r - 1)));
   }
 
-  /** A Continente request was made (agent call, session check or keep-alive): the wait starts again. */
+  /** A signed-in Continente request returned a result (agent call, session check or keep-alive): the wait starts again. */
   touch(at = this.now()): void {
     this.lastRequestAt = at;
     if (this.state === 'scheduled' || this.state === 'stopped_max_hours') this.arm();
@@ -85,7 +90,6 @@ export class SessionKeepAlive {
 
   /** True when the session is older than the max-hours limit. */
   private overMaxHours(): boolean {
-    if (!this.o.maxSessionMs) return false;
     const since = this.o.signedInAt() ?? this.validSince;
     return since !== null && this.now() - since >= this.o.maxSessionMs;
   }
@@ -97,7 +101,8 @@ export class SessionKeepAlive {
     this.state = state;
   }
 
-  private arm(): void {
+  /** Schedules the next check one interval (± jitter) after `from` (default: the last request). */
+  private arm(from?: number): void {
     if (!this.o.enabled || this.stopped || this.state === 'checking') return;
     if (this.o.sessionValid() !== true) { this.cancel('waiting_for_session'); return; }
     if (this.overMaxHours()) {
@@ -106,7 +111,7 @@ export class SessionKeepAlive {
       return;
     }
     this.cancel('scheduled');
-    const due = (this.lastRequestAt ?? this.now()) + this.nextDelay();
+    const due = (from ?? this.lastRequestAt ?? this.now()) + this.nextDelay();
     this.nextAt = due;
     const t = (this.o.setTimer ?? setTimeout)(() => { void this.fire(); }, Math.max(0, due - this.now()));
     (t as { unref?: () => void } | undefined)?.unref?.();
@@ -119,19 +124,21 @@ export class SessionKeepAlive {
     if (!this.o.enabled || this.stopped || this.state !== 'scheduled') return;
     if (this.o.sessionValid() !== true) { this.cancel('waiting_for_session'); return; }
     if (this.overMaxHours()) { this.arm(); return; }
-    if (this.o.signingIn?.()) { this.lastRequestAt = this.now(); this.arm(); return; }
+    if (this.o.signingIn?.()) { this.arm(this.now()); return; }
     this.state = 'checking';
     this.nextAt = null;
     this.checks++;
     let valid: boolean | null = null;
     try { valid = await this.o.probe(); } catch { valid = null; }
-    this.lastRequestAt = this.now();
+    const at = this.now();
+    // Only an answer refreshed the session; a failure did not.
+    if (valid !== null) this.lastRequestAt = at;
     // The check's own result already reached the session tracker; if that stopped or paused the keep-alive, keep it so.
     if (this.state !== 'checking') return;
     this.state = 'scheduled';
     if (valid === false) { this.sessionChanged(false); return; }
     if (valid === null) this.o.log?.('[keepalive] session check failed; trying again after the next interval');
-    this.arm();
+    this.arm(at);
   }
 
   status(): { enabled: boolean; state: KeepAliveState; next_at: string | null; checks: number } {

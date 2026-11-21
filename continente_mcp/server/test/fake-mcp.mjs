@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Fake continentept-mcp for tests: speaks MCP over stdio, records every tool call it receives
 // (JSON lines in FAKE_MCP_LOG) and never talks to Continente.
-// FAKE_MCP_MODE: "ok" (default) | "not_authenticated" | "sign_in" (continentept-mcp 0.15.0's robot-check
+// FAKE_MCP_MODE: "hang" (never answers a call) | "ok" (default) | "not_authenticated" | "sign_in" (continentept-mcp 0.15.0's robot-check
 // error, with its terminal command and session.json text) | "crash_once" (exits on the first call
 // of each process until FAKE_MCP_STATE exists).
 import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
@@ -34,7 +34,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 server.setRequestHandler(CallToolRequestSchema, async req => {
   const { name, arguments: args = {} } = req.params;
-  if (process.env.FAKE_MCP_LOG) appendFileSync(process.env.FAKE_MCP_LOG, JSON.stringify({ name, args, pid: process.pid, password: password() }) + '\n');
+  if (process.env.FAKE_MCP_LOG) appendFileSync(process.env.FAKE_MCP_LOG, JSON.stringify({ name, args, pid: process.pid, password: password(), env: Object.keys(process.env).sort() }) + '\n');
+  if (mode === 'hang') return new Promise(() => undefined);
   if (mode === 'crash_once' && !existsSync(process.env.FAKE_MCP_STATE)) {
     writeFileSync(process.env.FAKE_MCP_STATE, 'crashed');
     process.exit(1);

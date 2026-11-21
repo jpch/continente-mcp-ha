@@ -5,6 +5,11 @@
  * Calls go only to the Core API through the Supervisor proxy (`http://supervisor/core/api`, `homeassistant_api: true`)
  * with the add-on's SUPERVISOR_TOKEN. The token is never logged; a failed call logs only the path and the HTTP status.
  * Home Assistant may be restarting: a failed call is retried with a growing delay until the wanted state is reached.
+ *
+ * Home Assistant does not keep persistent notifications or API-set states across its own restart. `watch()` (every
+ * 30 s from index.ts, only while the session is expired or the sensor is on) notices a restart and shows them again:
+ * the sensor is missing (404), or the Core API failed and then answered again. A notification the user dismissed by
+ * hand while Home Assistant kept running is not shown again until the next expiry.
  */
 export const CORE_API = 'http://supervisor/core/api';
 export const NOTIFICATION_ID = 'continente_mcp_session_expired';
@@ -51,17 +56,38 @@ export class HaSessionNotifier {
   private again = false;
   private retry: unknown;
   private failures = 0;
+  /** Consecutive failed Core API calls (any call). */
+  private failuresInRow = 0;
+  /** The last watch() could not reach the Core API. */
+  private unreachable = false;
 
   constructor(private readonly o: HaOptions) { this.fetch = o.fetchImpl ?? fetch; }
 
-  /**
-   * Publishes the sensor again (states set through the API do not survive a Home Assistant restart). The
-   * notification is left as it is, so one the user dismissed by hand does not come back until the next expiry.
-   */
-  refreshSensor(): Promise<void> {
-    if (!this.o.sensor) return Promise.resolve();
+  /** False after 3 Core API calls in a row failed; true when the last one worked or none was needed yet. */
+  get working(): boolean { return this.failuresInRow < 3; }
+
+  /** Whether watch() has anything to look after. */
+  get watching(): boolean { return this.o.sensor || (this.wanted === false && this.notified === true); }
+
+  /** One restart check: after a Home Assistant restart, show the notification and the sensor again. */
+  async watch(): Promise<void> {
+    if (!this.watching) return;
+    let restarted = false;
+    if (this.o.sensor && this.sensorState !== undefined) {
+      const status = await this.get(`/states/${SENSOR_ENTITY}`);
+      if (status === 404) restarted = true;
+      else if (status === null) { this.unreachable = true; return; }
+    } else {
+      const status = await this.get('/');
+      if (status === null) { this.unreachable = true; return; }
+    }
+    if (this.unreachable) restarted = true;
+    this.unreachable = false;
+    if (!restarted) return;
+    this.o.log?.('[ha] Home Assistant restarted: showing the session state again');
+    if (this.wanted === false) this.notified = undefined;
     this.sensorState = undefined;
-    return this.sync();
+    await this.sync();
   }
 
   /** The session changed: show, dismiss or leave the notification, and update the sensor. */
@@ -109,10 +135,29 @@ export class HaSessionNotifier {
         body: JSON.stringify(body), signal: AbortSignal.timeout(15_000),
       });
       if (!res.ok) this.o.log?.(`[ha] POST ${path} -> ${res.status}`);
+      this.count(res.ok);
       return res.ok;
     } catch (e) {
       this.o.log?.(`[ha] POST ${path} failed: ${(e as Error).name}`);
+      this.count(false);
       return false;
     }
   }
+
+  /** HTTP status of a GET, or null when Home Assistant did not answer (network error, 5xx from the proxy). */
+  private async get(path: string): Promise<number | null> {
+    try {
+      const res = await this.fetch(`${CORE_API}${path}`, {
+        method: 'GET', headers: { authorization: `Bearer ${this.o.token}` }, signal: AbortSignal.timeout(15_000),
+      });
+      const answered = res.status < 500;
+      this.count(res.ok || res.status === 404);
+      return answered ? res.status : null;
+    } catch {
+      this.count(false);
+      return null;
+    }
+  }
+
+  private count(ok: boolean): void { this.failuresInRow = ok ? 0 : this.failuresInRow + 1; }
 }

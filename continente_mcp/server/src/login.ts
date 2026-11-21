@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { childEnv } from './config.js';
 
 export type LoginState = 'idle' | 'starting' | 'waiting_user' | 'succeeded' | 'failed' | 'timed_out' | 'cancelled';
 export interface Command { command: string; args: string[] }
@@ -10,6 +11,7 @@ export interface LoginOptions {
   websockify: Command;
   /** `continentept-mcp login --show-browser`. */
   login: Command;
+  /** Added to the allowlisted environment (`childEnv`). */
   env: Record<string, string>;
   timeoutMs?: number;
   /** Delay between starting the display and starting the browser. */
@@ -35,7 +37,8 @@ export class LoginService extends EventEmitter {
     if (this.active) return this.state;
     this.state = 'starting';
     this.startedAt = new Date().toISOString();
-    const env = { ...(process.env as Record<string, string>), ...this.options.env };
+    // Allowlisted environment only (no SUPERVISOR_TOKEN): Xvnc, websockify, the sign-in and its Chromium.
+    const env = childEnv(this.options.env);
     const run = (c: Command) => {
       const p = spawn(c.command, c.args, { env, stdio: ['ignore', 'inherit', 'inherit'] });
       p.on('error', () => { if (this.active) this.finish('failed'); });
