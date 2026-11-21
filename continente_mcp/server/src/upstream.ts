@@ -8,6 +8,8 @@ import { isCartChange } from './policy.js';
 export interface CallOptions {
   /** MCP request timeout for this call (the SDK default is 60 s). */
   timeoutMs?: number;
+  /** Restarts of the process for this call after a failure (default: `maxRestarts`). Cart changes never retry. */
+  retries?: number;
 }
 
 export interface Upstream {
@@ -36,7 +38,6 @@ export class StdioUpstream implements Upstream {
   private client?: Client;
   private connecting?: Promise<Client>;
   private tools?: Tool[];
-  private failures = 0;
   /** Bumped by close(): a connection still opening when close() was called is closed as soon as it opens. */
   private generation = 0;
 
@@ -74,17 +75,25 @@ export class StdioUpstream implements Upstream {
     return tools;
   }
 
+  /**
+   * One tool call. After a failure (process exit, request timeout) the process that failed is closed, never left
+   * running, and the call is tried again in a new one up to `retries` times, unless it is a cart change or close()
+   * was called meanwhile (e.g. the keep-alive check abandoned it).
+   */
   async callTool(name: string, args: Record<string, unknown>, options: CallOptions = {}): Promise<CallToolResult> {
-    const max = this.options.maxRestarts ?? 3;
-    for (;;) {
+    const max = options.retries ?? this.options.maxRestarts ?? 3;
+    const generation = this.generation;
+    for (let attempt = 0; ; attempt++) {
+      let client: Client | undefined;
       try {
-        const client = await this.connect();
-        const res = (await client.callTool({ name, arguments: args }, undefined, options.timeoutMs ? { timeout: options.timeoutMs } : undefined)) as CallToolResult;
-        this.failures = 0;
-        return res;
+        client = await this.connect();
+        return (await client.callTool({ name, arguments: args }, undefined, options.timeoutMs ? { timeout: options.timeoutMs } : undefined)) as CallToolResult;
       } catch (error) {
-        this.client = undefined;
-        if (++this.failures > max || isCartChange(name)) throw error;
+        if (client) {
+          if (this.client === client) this.client = undefined;
+          await client.close().catch(() => undefined);
+        }
+        if (attempt >= max || isCartChange(name) || generation !== this.generation) throw error;
       }
     }
   }

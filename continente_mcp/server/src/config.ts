@@ -61,8 +61,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
  * Environment of every child process (continentept-mcp, the keep-alive check, the sign-in, Xvnc, websockify and
  * through them Chromium): only what they need. Everything else the add-on has, above all SUPERVISOR_TOKEN, stays out.
  */
-const CHILD_ENV_NAMES = new Set(['PATH', 'HOME', 'LANG', 'LANGUAGE', 'TZ', 'TMPDIR', 'NODE_ENV', 'DISPLAY']);
-const CHILD_ENV_PREFIXES = ['LC_', 'PLAYWRIGHT_', 'CONTINENTE_', 'XDG_'];
+const CHILD_ENV_NAMES = new Set(['PATH', 'HOME', 'LANG', 'LANGUAGE', 'TZ', 'TMPDIR', 'NODE_ENV', 'DISPLAY',
+  // continentept-mcp settings from the image (Dockerfile ENV). Exact names only: CONTINENTE_EMAIL, CONTINENTE_PASSWORD
+  // and CONTINENTE_CREDENTIALS_FILE never come from this process's environment; the add-on sets what it needs.
+  'CONTINENTE_DATA_DIR', 'CONTINENTE_SIGN_IN_WINDOW']);
+const CHILD_ENV_PREFIXES = ['LC_', 'PLAYWRIGHT_', 'XDG_'];
 export function childEnv(extra: Record<string, string> = {}, env: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) {

@@ -17,7 +17,8 @@ export interface ProbeTarget {
  * The keep-alive check: one `get_cart` (read-only). It runs either in a short-lived continentept-mcp process with
  * no password, or in the main process when that one has no password either (`unattended_sign_in` off): in both
  * cases a failed check can never turn into a sign-in. Returns true (signed in), false (`not_authenticated`) or
- * null (no answer, error, timeout).
+ * null (no answer, error, timeout). The call is never retried (`retries: 0`); on timeout or error the process is
+ * closed (`abandon`), which also stops anything still running for it.
  */
 export async function probeSession(
   target: () => ProbeTarget, observe: (r: CallToolResult) => void, timeoutMs = PROBE_TIMEOUT_MS,
@@ -28,7 +29,7 @@ export async function probeSession(
   let failed = false;
   try {
     const timeout = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), timeoutMs); timer.unref?.(); });
-    const r = await Promise.race([t.upstream.callTool('get_cart', {}, { timeoutMs: requestTimeoutMs }), timeout]);
+    const r = await Promise.race([t.upstream.callTool('get_cart', {}, { timeoutMs: requestTimeoutMs, retries: 0 }), timeout]);
     if (!r) { failed = true; return null; }
     observe(r);
     return sessionEvidence(r, 'get_cart');

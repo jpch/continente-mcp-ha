@@ -19,7 +19,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   options; dismissed when the session is valid again, shown again after a Home Assistant restart while the session is
   still expired. Optional `binary_sensor.continente_mcp_session` (option `session_sensor`). The add-on now has
   `homeassistant_api: true`.
-- `/health` reports `session_keepalive.enabled` and `ha_notification` (false after 3 failed Home Assistant calls in a
+- `/health` reports `session_keepalive.enabled` and `ha_notification` (false after 3 failed notification calls in a
   row); the admin status also reports `unattended_sign_in` and the keep-alive state.
 - `DOCS.md` for the add-on's Documentation tab.
 ### Changed
@@ -27,7 +27,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `list_frequently_bought_products`). A search or a cached answer no longer marks a signed-out session as valid.
 ### Security
 - The Supervisor token is removed from the environment at start, and every child process (continentept-mcp, the
-  sign-in, Xvnc, websockify, Chromium) gets an allowlisted environment.
+  sign-in, Xvnc, websockify, Chromium) gets an allowlisted environment (no Continente email, password or credentials
+  file from the add-on's own environment).
+### Fixed
+- A continentept-mcp call that timed out left its process running while it was tried again; every failed attempt now
+  closes its process, and a closed upstream stops retrying.
 
 ## [1.0.5] - 2026-11-21
 ### Changed

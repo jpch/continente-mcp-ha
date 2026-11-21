@@ -56,14 +56,14 @@ export class HaSessionNotifier {
   private again = false;
   private retry: unknown;
   private failures = 0;
-  /** Consecutive failed Core API calls (any call). */
+  /** Consecutive failed notification calls (create or dismiss); sensor and watch calls do not count. */
   private failuresInRow = 0;
   /** The last watch() could not reach the Core API. */
   private unreachable = false;
 
   constructor(private readonly o: HaOptions) { this.fetch = o.fetchImpl ?? fetch; }
 
-  /** False after 3 Core API calls in a row failed; true when the last one worked or none was needed yet. */
+  /** False after 3 notification calls in a row failed; true when the last one worked or none was needed yet. */
   get working(): boolean { return this.failuresInRow < 3; }
 
   /** Whether watch() has anything to look after. */
@@ -109,10 +109,10 @@ export class HaSessionNotifier {
     const valid = this.wanted;
     let ok = true;
     if (valid === false && this.notified !== true) {
-      if (await this.post('/services/persistent_notification/create', expiredNotification(this.o.slug()))) this.notified = true; else ok = false;
+      if (await this.post('/services/persistent_notification/create', expiredNotification(this.o.slug()), true)) this.notified = true; else ok = false;
     } else if (valid === true && this.notified !== false) {
       // Also clears a notification left from before an add-on restart.
-      if (await this.post('/services/persistent_notification/dismiss', { notification_id: NOTIFICATION_ID })) this.notified = false; else ok = false;
+      if (await this.post('/services/persistent_notification/dismiss', { notification_id: NOTIFICATION_ID }, true)) this.notified = false; else ok = false;
     }
     if (this.o.sensor) {
       const state = valid === null ? 'unknown' : valid ? 'on' : 'off';
@@ -128,18 +128,19 @@ export class HaSessionNotifier {
     this.retry = t;
   }
 
-  private async post(path: string, body: unknown): Promise<boolean> {
+  /** `notification`: a create or dismiss call, which counts for `working`. */
+  private async post(path: string, body: unknown, notification = false): Promise<boolean> {
     try {
       const res = await this.fetch(`${CORE_API}${path}`, {
         method: 'POST', headers: { authorization: `Bearer ${this.o.token}`, 'content-type': 'application/json' },
         body: JSON.stringify(body), signal: AbortSignal.timeout(15_000),
       });
       if (!res.ok) this.o.log?.(`[ha] POST ${path} -> ${res.status}`);
-      this.count(res.ok);
+      if (notification) this.count(res.ok);
       return res.ok;
     } catch (e) {
       this.o.log?.(`[ha] POST ${path} failed: ${(e as Error).name}`);
-      this.count(false);
+      if (notification) this.count(false);
       return false;
     }
   }
@@ -150,11 +151,8 @@ export class HaSessionNotifier {
       const res = await this.fetch(`${CORE_API}${path}`, {
         method: 'GET', headers: { authorization: `Bearer ${this.o.token}` }, signal: AbortSignal.timeout(15_000),
       });
-      const answered = res.status < 500;
-      this.count(res.ok || res.status === 404);
-      return answered ? res.status : null;
+      return res.status < 500 ? res.status : null;
     } catch {
-      this.count(false);
       return null;
     }
   }

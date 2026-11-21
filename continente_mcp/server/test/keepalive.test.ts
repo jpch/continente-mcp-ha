@@ -281,6 +281,61 @@ describe('the keep-alive check never signs in', () => {
     expect(seen).toEqual([55_000, 1_000]);
   });
 
+  const pidsIn = (log: string) => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(l => (JSON.parse(l) as { pid: number }).pid) : []);
+  const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+  it('N1: a hung check (probe timeout first) is abandoned, never retried, and leaves no process alive', async () => {
+    const d = dir(); const log = join(d, 'calls.jsonl');
+    const u = new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...probeEnv(d), FAKE_MCP_MODE: 'hang', FAKE_MCP_LOG: log } });
+    // Request timeout above the check timeout: the abandon path, not the SDK timeout, ends it.
+    expect(await probeSession(() => separateProcess(u), () => undefined, 300, 5_000)).toBeNull();
+    await new Promise(r => setTimeout(r, 1_000));
+    const pids = pidsIn(log);
+    expect(pids).toHaveLength(1);
+    await vi.waitFor(() => expect(pids.filter(alive)).toEqual([]), { timeout: 6_000 });
+    expect(u.open).toBe(false);
+  });
+
+  it('N1: a hung check on the main process (SDK timeout first) restarts it without retries or orphans', async () => {
+    const d = dir(); const log = join(d, 'calls.jsonl');
+    const main = new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...upstreamEnv(d, false), FAKE_MCP_MODE: 'hang', FAKE_MCP_LOG: log } });
+    expect(await probeSession(() => mainProcess(main), () => undefined, 3_000, 200)).toBeNull();
+    await new Promise(r => setTimeout(r, 500));
+    const pids = pidsIn(log);
+    expect(pids).toHaveLength(1);
+    await vi.waitFor(() => expect(pids.filter(alive)).toEqual([]), { timeout: 6_000 });
+  });
+
+  it('N1: an agent call that keeps timing out retries in new processes and closes every one', async () => {
+    const d = dir(); const log = join(d, 'calls.jsonl');
+    const u = new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...upstreamEnv(d), FAKE_MCP_MODE: 'hang', FAKE_MCP_LOG: log } });
+    await expect(u.callTool('get_cart', {}, { timeoutMs: 200 })).rejects.toThrow();
+    const pids = pidsIn(log);
+    expect(new Set(pids).size).toBe(4);              // first try + 3 restarts
+    await vi.waitFor(() => expect(pids.filter(alive)).toEqual([]), { timeout: 6_000 });
+    expect(u.open).toBe(false);
+  }, 30_000);
+
+  it('N1: close() stops the retries of a running call', async () => {
+    const d = dir(); const log = join(d, 'calls.jsonl');
+    const u = new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...upstreamEnv(d), FAKE_MCP_MODE: 'hang', FAKE_MCP_LOG: log } });
+    const call = u.callTool('get_cart', {}, { timeoutMs: 5_000 });
+    await vi.waitFor(() => expect(pidsIn(log)).toHaveLength(1));
+    await u.close();
+    await expect(call).rejects.toThrow();
+    await new Promise(r => setTimeout(r, 500));
+    const pids = pidsIn(log);
+    expect(pids).toHaveLength(1);
+    await vi.waitFor(() => expect(pids.filter(alive)).toEqual([]), { timeout: 6_000 });
+  });
+
+  it('a cart change is never retried', async () => {
+    const d = dir(); const log = join(d, 'calls.jsonl');
+    const u = new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...upstreamEnv(d), FAKE_MCP_MODE: 'hang', FAKE_MCP_LOG: log } });
+    await expect(u.callTool('set_cart_item_quantity', { productId: '1', quantity: 1 }, { timeoutMs: 200 })).rejects.toThrow();
+    expect(pidsIn(log)).toHaveLength(1);
+  });
+
   it('a real hung process: the SDK request times out and the process is closed', async () => {
     const d = dir();
     const u = new StdioUpstream({ command: process.execPath, args: [FAKE], env: { ...probeEnv(d), FAKE_MCP_MODE: 'hang' }, maxRestarts: 0 });
@@ -499,6 +554,20 @@ describe('Home Assistant notification and sensor', () => {
     expect(JSON.parse(String(h.calls.at(-1)!.init.body)).state).toBe('on');
   });
 
+  it('N2: only notification calls count for working; sensor and watch failures do not', async () => {
+    const h = ha(true);
+    h.setRoute((path) => (path.startsWith('/states/') || path === '/' ? 500 : undefined));
+    await h.n.update(true);                          // dismiss ok, sensor POST fails
+    for (let i = 0; i < 5; i++) { h.timers.shift()?.(); await new Promise(r => setImmediate(r)); }
+    for (let i = 0; i < 5; i++) await h.n.watch();
+    expect(h.n.working).toBe(true);
+    h.setRoute(() => 500);
+    await h.n.update(false);
+    const next = async () => { h.timers.shift()!(); await new Promise(r => setTimeout(r, 5)); };
+    await next(); await next();
+    expect(h.n.working).toBe(false);
+  });
+
   it('a network error during watch counts as Home Assistant down', async () => {
     const h = ha(false);
     await h.n.update(false);
@@ -527,10 +596,11 @@ describe('child processes never see the Supervisor token', () => {
 
   it('childEnv keeps only the allowlist', () => {
     const env = { PATH: '/bin', HOME: '/root', LANG: 'C.UTF-8', LC_ALL: 'C', TZ: 'UTC', NODE_ENV: 'production', DISPLAY: ':1',
-      PLAYWRIGHT_BROWSERS_PATH: '/opt/pw', CONTINENTE_DATA_DIR: '/d', XDG_RUNTIME_DIR: '/run', TMPDIR: '/tmp',
+      PLAYWRIGHT_BROWSERS_PATH: '/opt/pw', CONTINENTE_DATA_DIR: '/d', CONTINENTE_SIGN_IN_WINDOW: '0', XDG_RUNTIME_DIR: '/run', TMPDIR: '/tmp',
+      CONTINENTE_PASSWORD: 'p', CONTINENTE_EMAIL: 'e@example.com', CONTINENTE_CREDENTIALS_FILE: '/x', CONTINENTE_BROWSER_IDLE_SECONDS: '1',
       SUPERVISOR_TOKEN: SECRET, HASSIO_TOKEN: SECRET, OPTIONS_PATH: '/data/options.json', AWS_SECRET: 'x', NODE_OPTIONS: '--inspect' };
     const out = childEnv({ EXTRA: '1' }, env);
-    expect(Object.keys(out).sort()).toEqual(['CONTINENTE_DATA_DIR', 'DISPLAY', 'EXTRA', 'HOME', 'LANG', 'LC_ALL', 'NODE_ENV', 'PATH', 'PLAYWRIGHT_BROWSERS_PATH', 'TMPDIR', 'TZ', 'XDG_RUNTIME_DIR']);
+    expect(Object.keys(out).sort()).toEqual(['CONTINENTE_DATA_DIR', 'CONTINENTE_SIGN_IN_WINDOW', 'DISPLAY', 'EXTRA', 'HOME', 'LANG', 'LC_ALL', 'NODE_ENV', 'PATH', 'PLAYWRIGHT_BROWSERS_PATH', 'TMPDIR', 'TZ', 'XDG_RUNTIME_DIR']);
   });
 
   it('continentept-mcp (main and keep-alive processes) and the sign-in processes get no token', async () => {
