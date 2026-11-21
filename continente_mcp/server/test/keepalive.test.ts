@@ -384,6 +384,17 @@ describe('Home Assistant notification and sensor', () => {
     expect(states[0].attributes).toMatchObject({ device_class: 'connectivity' });
   });
 
+  it('publishes the sensor again on refresh (Home Assistant restarts drop it) without touching the notification', async () => {
+    const h = ha(true);
+    await h.n.update(false);
+    const before = h.calls.length;
+    await h.n.refreshSensor();
+    expect(paths(h.calls.slice(before))).toEqual([`/states/${SENSOR_ENTITY}`]);
+    const off = ha(false);
+    await off.n.refreshSensor();
+    expect(off.calls).toHaveLength(0);
+  });
+
   it('links only to relative Home Assistant paths (no host names)', () => {
     expect(addonLinks(null)).toEqual({ page: '/hassio/dashboard', info: '/hassio/dashboard' });
     expect(addonLinks('../evil')).toEqual({ page: '/hassio/dashboard', info: '/hassio/dashboard' });

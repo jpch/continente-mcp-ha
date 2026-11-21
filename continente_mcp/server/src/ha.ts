@@ -54,6 +54,16 @@ export class HaSessionNotifier {
 
   constructor(private readonly o: HaOptions) { this.fetch = o.fetchImpl ?? fetch; }
 
+  /**
+   * Publishes the sensor again (states set through the API do not survive a Home Assistant restart). The
+   * notification is left as it is, so one the user dismissed by hand does not come back until the next expiry.
+   */
+  refreshSensor(): Promise<void> {
+    if (!this.o.sensor) return Promise.resolve();
+    this.sensorState = undefined;
+    return this.sync();
+  }
+
   /** The session changed: show, dismiss or leave the notification, and update the sensor. */
   update(valid: boolean | null): Promise<void> {
     this.wanted = valid;

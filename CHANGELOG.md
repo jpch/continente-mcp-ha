@@ -16,7 +16,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `continentept-mcp` never signs in on its own; sign-in happens only on the add-on page.
 - Home Assistant persistent notification (pt-PT) as soon as the session expires, with links to the add-on page and its
   options; dismissed when the session is valid again. Optional `binary_sensor.continente_mcp_session` (option
-  `session_sensor`). The add-on now has `homeassistant_api: true`.
+  `session_sensor`, published again every 5 minutes). The add-on now has `homeassistant_api: true`.
 - `/health` reports `unattended_sign_in`, `ha_notification` and the keep-alive state.
 ### Changed
 - The session counts as valid only after a tool that always makes a signed-in request (cart tools, `list_orders`,

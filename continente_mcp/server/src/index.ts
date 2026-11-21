@@ -88,6 +88,7 @@ keepAlive = new SessionKeepAlive({
 // The session-expired notification (and the optional binary_sensor) in Home Assistant.
 const supervisorToken = process.env.SUPERVISOR_TOKEN;
 const ha = supervisorToken ? new HaSessionNotifier({ token: supervisorToken, slug: () => config.addonSlug, sensor: config.sessionSensor, log }) : undefined;
+if (ha && config.sessionSensor) setInterval(() => { void ha.refreshSensor(); }, 300_000).unref();
 
 session.on('session', (v: boolean | null) => {
   log(`[session] valid=${v}`);
